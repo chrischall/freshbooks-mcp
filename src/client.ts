@@ -26,6 +26,24 @@ export interface Identity {
   businessRole: string | null;
 }
 
+/** Families keyed by businessId rather than accountId, each on its own URL prefix. */
+export type BusinessFamily = 'projects' | 'timetracking' | 'comments';
+
+export interface ListResult {
+  items: unknown[];
+  page: number | null;
+  pages: number | null;
+  total: number | null;
+  /** Set when the response is self-inconsistent in a way worth reporting to the caller. */
+  note?: string;
+  /**
+   * Non-pagination fields from a business-family `meta` block — `total_logged`,
+   * `total_unbilled`, `total_logged_per_client` and friends. Pagination is already
+   * surfaced above, so it is excluded here rather than duplicated.
+   */
+  meta?: Record<string, unknown>;
+}
+
 export interface ListOptions {
   page?: number;
   perPage?: number;
@@ -257,7 +275,7 @@ export class FreshbooksClient {
     resourcePath: string,
     listKey: string,
     opts: ListOptions = {},
-  ): Promise<{ items: unknown[]; page: number | null; pages: number | null; total: number | null }> {
+  ): Promise<ListResult> {
     const query = buildQueryString({
       page: opts.page,
       per_page: opts.perPage,
@@ -265,16 +283,84 @@ export class FreshbooksClient {
     });
     const result = await this.accounting(`${resourcePath}${query}`);
     const items = Array.isArray(result[listKey]) ? (result[listKey] as unknown[]) : [];
-    return {
+    const total = asNumber(result.total);
+    return withVisibilityNote({
       items,
       page: asNumber(result.page),
       pages: asNumber(result.pages),
-      total: asNumber(result.total),
-    };
+      total,
+    });
+  }
+
+  /**
+   * Business-scoped families (`/projects`, `/timetracking`, `/comments`). These take the
+   * integer businessId — NOT the accountId — return a bare object whose pagination lives
+   * in a `meta` block, and report errors as a flat `error` string. None of that matches
+   * the accounting family, so they get their own reader.
+   */
+  private async business(
+    family: BusinessFamily,
+    path: string,
+    init: { method?: string; body?: unknown } = {},
+  ): Promise<Record<string, unknown>> {
+    const { businessId } = await this.getIdentity();
+    // `family` IS the URL prefix for all three of these.
+    const body = await this.request(`/${family}/business/${businessId}/${path}`, init);
+    return (body ?? {}) as Record<string, unknown>;
+  }
+
+  async businessList(
+    family: BusinessFamily,
+    resourcePath: string,
+    listKey: string,
+    opts: ListOptions = {},
+  ): Promise<ListResult> {
+    const query = buildQueryString({
+      page: opts.page,
+      per_page: opts.perPage,
+      ...(opts.filters ?? {}),
+    });
+    const result = await this.business(family, `${resourcePath}${query}`);
+    const meta = (result.meta ?? {}) as Record<string, unknown>;
+    const items = Array.isArray(result[listKey]) ? (result[listKey] as unknown[]) : [];
+    // Pagination is surfaced at the top level; pass the REST of meta through rather than
+    // dropping fields the time-entry tool advertises (total_logged, total_unbilled, …).
+    const { page: _p, pages: _pg, per_page: _pp, total: _t, ...extraMeta } = meta;
+    return withVisibilityNote({
+      items,
+      page: asNumber(meta.page),
+      pages: asNumber(meta.pages),
+      total: asNumber(meta.total),
+      ...(Object.keys(extraMeta).length > 0 ? { meta: extraMeta } : {}),
+    });
+  }
+
+  async businessGet(
+    family: BusinessFamily,
+    resourcePath: string,
+    id: number | string,
+    singleKey: string,
+  ): Promise<unknown> {
+    const result = await this.business(family, `${resourcePath}/${encodeURIComponent(String(id))}`);
+    return result[singleKey] ?? result ?? null;
+  }
+
+  async businessWrite(
+    family: BusinessFamily,
+    resourcePath: string,
+    singleKey: string,
+    payload: Record<string, unknown>,
+    opts: { id?: number | string; method?: 'POST' | 'PUT' } = {},
+  ): Promise<unknown> {
+    const method = opts.method ?? (opts.id === undefined ? 'POST' : 'PUT');
+    const path =
+      opts.id === undefined ? resourcePath : `${resourcePath}/${encodeURIComponent(String(opts.id))}`;
+    const result = await this.business(family, path, { method, body: { [singleKey]: payload } });
+    return result[singleKey] ?? null;
   }
 
   async accountingGet(resourcePath: string, id: number | string, singleKey: string): Promise<unknown> {
-    const result = await this.accounting(`${resourcePath}/${id}`);
+    const result = await this.accounting(`${resourcePath}/${encodeURIComponent(String(id))}`);
     return result[singleKey] ?? null;
   }
 
@@ -290,7 +376,8 @@ export class FreshbooksClient {
     opts: { id?: number | string; method?: 'POST' | 'PUT' } = {},
   ): Promise<unknown> {
     const method = opts.method ?? (opts.id === undefined ? 'POST' : 'PUT');
-    const path = opts.id === undefined ? resourcePath : `${resourcePath}/${opts.id}`;
+    const path =
+      opts.id === undefined ? resourcePath : `${resourcePath}/${encodeURIComponent(String(opts.id))}`;
     const result = await this.accounting(path, { method, body: { [singleKey]: payload } });
     return result[singleKey] ?? null;
   }
@@ -304,6 +391,27 @@ function hasErrorEnvelope(body: unknown): boolean {
   if (respErrors !== undefined && respErrors !== null) return true;
   if (b.errors !== undefined && b.errors !== null) return true;
   return typeof b.error === 'string';
+}
+
+/**
+ * FreshBooks reports a `total` that counts records the caller may not actually read:
+ * observed live as `total: 16` with an empty `expenses` array. Left unannotated, a
+ * caller reports "16 expenses" while showing none, or pages through 16 empty pages.
+ */
+function withVisibilityNote(r: ListResult): ListResult {
+  // `items: 0` with `total > 0` is ALSO what paging past the end looks like. Claiming a
+  // permission boundary there is a confident wrong answer in the opposite direction from
+  // the one this note exists to prevent, so only annotate an in-range page.
+  const inRange = r.page === null || r.pages === null || r.page <= r.pages;
+  if (inRange && r.items.length === 0 && r.total !== null && r.total > 0) {
+    return {
+      ...r,
+      note:
+        `FreshBooks reports total=${r.total} but returned no rows. The count includes records ` +
+        'this identity does not have permission to read, so paging further will not surface them.',
+    };
+  }
+  return r;
 }
 
 function asString(v: unknown): string | null {

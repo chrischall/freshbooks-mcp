@@ -276,3 +276,169 @@ describe('account role and 403 handling (live-observed)', () => {
     );
   });
 });
+
+describe('business-scoped families (projects / timetracking / comments)', () => {
+  // A different id (businessId, not accountId), a different envelope (bare, with a
+  // `meta` block rather than flat page/pages/total) and a different error shape
+  // (`error` string). Reusing the accounting reader here silently returns nothing.
+  const identity = {
+    response: {
+      roles: [{ role: 'owner', accountid: 'acct' }],
+      business_memberships: [{ role: 'owner', business: { id: 14754156, account_id: 'acct', business_uuid: 'u' } }],
+    },
+  };
+
+  it('lists from the bare envelope and reads pagination out of meta', async () => {
+    const c = clientWith((url) => {
+      if (url.includes('/users/me')) return new Response(JSON.stringify(identity), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          meta: { total: 3, per_page: 30, page: 1, pages: 1 },
+          projects: [{ id: 1, title: 'Patio' }, { id: 2, title: 'Garage' }, { id: 3, title: 'Deck' }],
+        }),
+        { status: 200 },
+      );
+    }, '/tmp/fb-biz-1.json');
+
+    const res = await c.businessList('projects', 'projects', 'projects');
+    expect(res.items).toHaveLength(3);
+    expect(res).toMatchObject({ page: 1, pages: 1, total: 3 });
+  });
+
+  it('targets businessId, not accountId', async () => {
+    const seen: string[] = [];
+    const c = clientWith((url) => {
+      seen.push(url);
+      if (url.includes('/users/me')) return new Response(JSON.stringify(identity), { status: 200 });
+      return new Response(JSON.stringify({ meta: {}, time_entries: [] }), { status: 200 });
+    }, '/tmp/fb-biz-2.json');
+
+    await c.businessList('timetracking', 'time_entries', 'time_entries');
+    expect(seen.some((u) => u.includes('/timetracking/business/14754156/time_entries'))).toBe(true);
+    expect(seen.some((u) => u.includes('/timetracking/business/acct/'))).toBe(false);
+  });
+
+  it('surfaces the flat `error` string these families use', async () => {
+    const c = clientWith((url) => {
+      if (url.includes('/users/me')) return new Response(JSON.stringify(identity), { status: 200 });
+      return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404 });
+    }, '/tmp/fb-biz-3.json');
+
+    await expect(c.businessGet('projects', 'projects', 9, 'project')).rejects.toThrow(/Project not found/);
+  });
+});
+
+describe('visibility-filtered lists (live-observed)', () => {
+  // Live: expenses reported total:16 while returning ZERO rows — the count includes
+  // records the identity may not read. Reporting "16 expenses" and showing none, or
+  // paging through 16 empty pages, are both wrong.
+  it('flags a non-zero total that returned no rows', async () => {
+    const c = clientWith((url) => {
+      if (url.includes('/users/me')) {
+        return new Response(
+          JSON.stringify({
+            response: { business_memberships: [{ business: { id: 1, account_id: 'acct', business_uuid: 'u' } }] },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ response: { result: { expenses: [], page: 1, pages: 16, per_page: 1, total: 16 } } }),
+        { status: 200 },
+      );
+    }, '/tmp/fb-filtered.json');
+
+    const res = await c.accountingList('expenses/expenses', 'expenses', { perPage: 1 });
+    expect(res.items).toHaveLength(0);
+    expect(res.total).toBe(16);
+    expect(res.note).toMatch(/not visible|permission/i);
+  });
+});
+
+describe('auto-review findings (PR #2)', () => {
+  const identity = {
+    response: {
+      roles: [{ role: 'owner', accountid: 'acct' }],
+      business_memberships: [{ role: 'owner', business: { id: 7, account_id: 'acct', business_uuid: 'u' } }],
+    },
+  };
+  const withIdentity =
+    (rest: (url: string) => Response) =>
+    (url: string): Response =>
+      url.includes('/users/me') ? new Response(JSON.stringify(identity), { status: 200 }) : rest(url);
+
+  it('passes through the extra meta fields the time-entry tool advertises', async () => {
+    // The tool description, README and API docs all promise total_logged/total_unbilled.
+    // Reading meta for page/pages/total only means an agent asked "how much unbilled time
+    // is there?" picks this tool and gets a response with no such field.
+    const c = clientWith(
+      withIdentity(
+        () =>
+          new Response(
+            JSON.stringify({
+              meta: {
+                total: 2, per_page: 30, page: 1, pages: 1,
+                total_logged: 7200, total_unbilled: 3600, total_logged_per_client: [{ client_id: 1 }],
+              },
+              time_entries: [{ id: 1 }, { id: 2 }],
+            }),
+            { status: 200 },
+          ),
+      ),
+      '/tmp/fb-meta.json',
+    );
+    const res = await c.businessList('timetracking', 'time_entries', 'time_entries');
+    expect(res.meta).toMatchObject({ total_logged: 7200, total_unbilled: 3600 });
+    // The pagination keys are already surfaced at the top level; don't duplicate them.
+    expect(res.meta).not.toHaveProperty('page');
+  });
+
+  it('does not claim a permission boundary when you simply paged past the end', async () => {
+    // items:0 + total>0 is also true for page 99 of 1 page. Telling the caller those rows
+    // are permission-hidden is a confident wrong answer in the opposite direction.
+    const c = clientWith(
+      withIdentity(
+        () =>
+          new Response(
+            JSON.stringify({ response: { result: { invoices: [], page: 99, pages: 1, per_page: 10, total: 5 } } }),
+            { status: 200 },
+          ),
+      ),
+      '/tmp/fb-overpage.json',
+    );
+    const res = await c.accountingList('invoices/invoices', 'invoices', { page: 99 });
+    expect(res.note).toBeUndefined();
+  });
+
+  it('still flags the real visibility filter (in range, rows withheld)', async () => {
+    const c = clientWith(
+      withIdentity(
+        () =>
+          new Response(
+            JSON.stringify({ response: { result: { expenses: [], page: 1, pages: 16, per_page: 1, total: 16 } } }),
+            { status: 200 },
+          ),
+      ),
+      '/tmp/fb-filtered2.json',
+    );
+    expect((await c.accountingList('expenses/expenses', 'expenses', { perPage: 1 })).note).toMatch(/permission/i);
+  });
+
+  it('escapes a path-traversing string id instead of retargeting the request', async () => {
+    // freshbooks_get_record is the only tool taking a non-numeric id; a `/` or `?` in it
+    // would otherwise redirect the call and defeat the enum's bounding of reachable paths.
+    const seen: string[] = [];
+    const c = clientWith(
+      withIdentity((url) => {
+        seen.push(url);
+        return new Response(JSON.stringify({ response: { result: { tax: null } } }), { status: 200 });
+      }),
+      '/tmp/fb-escape.json',
+    );
+    await c.accountingGet('taxes/taxes', '../../systems/systems?x=1', 'tax');
+    const call = seen.find((u) => !u.includes('/users/me')) ?? '';
+    expect(call).toContain('taxes/taxes/');
+    expect(call).not.toContain('../');
+    expect(call).toContain('%2F');
+  });
+});

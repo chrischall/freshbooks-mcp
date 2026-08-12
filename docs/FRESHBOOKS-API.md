@@ -156,6 +156,73 @@ wrong for at least four of them.
 Accounting writes wrap the payload in the **singular** resource name
 (`{"invoice": {...}}`); projects/timetracking do the same with their own singular name.
 
+### ⚠️ `total` counts records you cannot read
+
+Verified live: `expenses` returned **`total: 16` with zero rows**, and `expense_categories`
+returned **`total: 59` with zero rows**. The count includes records the identity lacks
+permission to read, and paging further never surfaces them. A consumer that trusts `total`
+reports "16 expenses" while showing none, or walks 16 empty pages. `accountingList` /
+`businessList` therefore attach a `note` whenever `total > 0` and no rows came back.
+
+### Resource paths — several are not what you would guess
+
+Four of these cost a round of 404s before the SDK source settled them:
+
+| Resource | Correct path | A reasonable wrong guess |
+| --- | --- | --- |
+| Expense categories | `expenses/categories` | `expense_categories/expense_categories` |
+| Staff | `users/staffs` | `staff/staff` |
+| Gateways | `systems/gateways` | `gateways/gateways` |
+| Other income | `other_incomes/other_incomes` | `other_income/other_incomes` |
+
+And `projects/tasks` is in the **accounting** family keyed by `accountId`, despite the
+`projects/` prefix — it is not part of the businessId-keyed projects family.
+
+### Live coverage matrix (real account, 2026-08-12)
+
+Every path below resolved — no 404s — so the paths are confirmed even where the account
+lacks access. "Gated" means `200` (or `403`) carrying an error envelope, not an empty list.
+
+| Resource | Path | Result |
+| --- | --- | --- |
+| invoices | `invoices/invoices` | OK |
+| clients | `users/clients` | OK (1 row) |
+| estimates | `estimates/estimates` | OK (1 row) |
+| payments | `payments/payments` | OK |
+| expenses | `expenses/expenses` | OK — `total: 16`, **0 rows** (filtered) |
+| expense_categories | `expenses/categories` | OK — `total: 59`, **0 rows** (filtered) |
+| taxes | `taxes/taxes` | OK |
+| credit_notes | `credit_notes/credit_notes` | OK |
+| invoice_profiles | `invoice_profiles/invoice_profiles` | OK |
+| tasks | `projects/tasks` | OK (77 total — the contractor's service catalogue) |
+| staff | `users/staffs` | OK (1 row) |
+| gateways | `systems/gateways` | OK |
+| items | `items/items` | Gated — errno 12001 |
+| bills | `bills/bills` | Gated — errno 41001 |
+| bill_vendors | `bill_vendors/bill_vendors` | Gated — errno 31001 |
+| bill_payments | `bill_payments/bill_payments` | Gated — errno 41101 |
+| other_income | `other_incomes/other_incomes` | Gated — errno 1003 Permission Denied |
+| projects | `projects/business/{businessId}/projects` | OK |
+| time_entries | `timetracking/business/{businessId}/time_entries` | OK |
+| services | `comments/business/{businessId}/services` | OK |
+
+### Business-scoped families use a `meta` block, not flat pagination
+
+The accounting family puts `page`/`pages`/`per_page`/`total` directly on
+`response.result`. The businessId-keyed families instead return a **bare** object with
+pagination nested under `meta`:
+
+```json
+{ "meta": { "total": 0, "per_page": 30, "page": 1, "pages": 0 }, "projects": [] }
+```
+
+`time_entries` additionally carries `total_logged`, `total_unbilled` and
+`total_logged_per_client` in that `meta`. Reading `result.total` here yields `undefined`,
+which looks like an empty account rather than a parsing mistake.
+
+These families also work on a business with **no accounting account**, which is why they
+can succeed when every invoicing endpoint fails.
+
 ### Invoicing & AR resources (accounting family, `accountId`)
 
 Path suffixes as used by the SDK — note several are doubled (`invoices/invoices`):

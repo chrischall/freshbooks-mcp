@@ -4,13 +4,18 @@ import { textResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { previewUnlessConfirmed, schemaConfirm } from './_confirm.js';
 
-/** Accounting-family resources. Several paths are doubled upstream (`invoices/invoices`). */
+import { ACCOUNTING_RESOURCES } from '../resources.js';
+
+/**
+ * The invoicing subset gets dedicated typed tools; the shared map is the single source of
+ * truth for paths so these cannot drift from `freshbooks_list_records`.
+ */
 const RESOURCES = {
-  invoices: { path: 'invoices/invoices', single: 'invoice', list: 'invoices' },
-  clients: { path: 'users/clients', single: 'client', list: 'clients' },
-  estimates: { path: 'estimates/estimates', single: 'estimate', list: 'estimates' },
-  payments: { path: 'payments/payments', single: 'payment', list: 'payments' },
-  items: { path: 'items/items', single: 'item', list: 'items' },
+  invoices: ACCOUNTING_RESOURCES.invoices,
+  clients: ACCOUNTING_RESOURCES.clients,
+  estimates: ACCOUNTING_RESOURCES.estimates,
+  payments: ACCOUNTING_RESOURCES.payments,
+  items: ACCOUNTING_RESOURCES.items,
 } as const;
 
 const pageArgs = {
