@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "freshbooks": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "env": {
+        "FRESHBOOKS_CLIENT_ID": "${FRESHBOOKS_CLIENT_ID}",
+        "FRESHBOOKS_CLIENT_SECRET": "${FRESHBOOKS_CLIENT_SECRET}",
+        "FRESHBOOKS_REFRESH_TOKEN": "${FRESHBOOKS_REFRESH_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.chrischall/freshbooks-mcp",
+  "description": "FreshBooks invoicing for Claude — invoices, clients, estimates, and payments",
+  "repository": { "url": "https://github.com/chrischall/freshbooks-mcp", "source": "github" },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@chrischall/freshbooks-mcp",
+      "version": "0.0.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "FRESHBOOKS_CLIENT_ID", "description": "OAuth client ID from my.freshbooks.com/#/developer", "isRequired": true, "format": "string", "isSecret": false },
+        { "name": "FRESHBOOKS_CLIENT_SECRET", "description": "OAuth client secret", "isRequired": true, "format": "string", "isSecret": true },
+        { "name": "FRESHBOOKS_REFRESH_TOKEN", "description": "OAuth refresh token from the one-time bootstrap (rotates on every use)", "isRequired": true, "format": "string", "isSecret": true },
+        { "name": "FRESHBOOKS_REDIRECT_URI", "description": "Registered redirect URI; required on refresh calls too (default https://localhost/callback)", "isRequired": false, "format": "string", "isSecret": false },
+        { "name": "FRESHBOOKS_TOKEN_STORE", "description": "Path for the rotating-refresh-token store (default ~/.freshbooks-mcp/session.json)", "isRequired": false, "format": "string", "isSecret": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # MUST be first — the first matching group wins. vitest and
+      # @vitest/coverage-v8 peer-depend on each other at an exact version, so a
+      # split bump makes the peer set unsatisfiable and `npm ci` dies. The stock
+      # dev-dependencies group only covers minor/patch, letting a MAJOR escape as
+      # two separate, individually-red PRs that no rerun can fix.
+      vitest:
+        patterns:
+          - vitest
+          - "@vitest/*"
+        update-types:
+          - major
+          - minor
+          - patch
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch

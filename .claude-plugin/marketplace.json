@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "freshbooks-mcp",
+  "owner": { "name": "Chris Hall", "email": "chris.c.hall@gmail.com" },
+  "metadata": {
+    "description": "MCP server for FreshBooks — natural-language invoicing, clients, estimates, and payments via the FreshBooks API",
+    "version": "0.0.0"
+  },
+  "plugins": [
+    {
+      "name": "freshbooks-mcp",
+      "displayName": "FreshBooks",
+      "source": "./",
+      "description": "MCP server for FreshBooks — manage invoices, clients, estimates, and payments via natural language",
+      "version": "0.0.0",
+      "author": { "name": "Chris Hall" },
+      "homepage": "https://github.com/chrischall/freshbooks-mcp",
+      "repository": "https://github.com/chrischall/freshbooks-mcp",
+      "license": "MIT",
+      "keywords": ["freshbooks","invoicing","mcp","finance"],
+      "category": "finance"
+    }
+  ]
+}
