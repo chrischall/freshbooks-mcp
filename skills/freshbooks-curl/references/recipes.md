@@ -92,18 +92,44 @@ fb_curl "/accounting/account/$ACCT/payments/payments" -X POST \
   -d '{"payment":{"invoiceid":456,"amount":{"amount":"1500.00","code":"USD"},"date":"2026-08-12","type":"Check"}}'
 ```
 
-## Estimates, items, taxes, expenses
+## Full accounting resource map
 
-Same accounting family and envelope; only the path suffix and keys change:
+Same family and envelope; only the path suffix and list key change. Four of these are not
+what you would guess — they are marked ⚠ and each cost a 404 before the SDK settled it.
 
 | Resource | Path suffix | List key |
 | --- | --- | --- |
+| Invoices | `invoices/invoices` | `invoices` |
+| Clients | `users/clients` | `clients` |
 | Estimates | `estimates/estimates` | `estimates` |
+| Payments | `payments/payments` | `payments` |
 | Credit notes | `credit_notes/credit_notes` | `credit_notes` |
+| Invoice profiles | `invoice_profiles/invoice_profiles` | `invoice_profiles` |
 | Items | `items/items` | `items` |
 | Taxes | `taxes/taxes` | `taxes` |
 | Expenses | `expenses/expenses` | `expenses` |
-| Invoice profiles | `invoice_profiles/invoice_profiles` | `invoice_profiles` |
+| Expense categories ⚠ | `expenses/categories` | `categories` |
+| Staff ⚠ | `users/staffs` | `staff` |
+| Gateways ⚠ | `systems/gateways` | `gateways` |
+| Other income ⚠ | `other_incomes/other_incomes` | `other_income` |
+| Tasks (billable catalogue) | `projects/tasks` | `tasks` |
+| Bills | `bills/bills` | `bills` |
+| Bill vendors | `bill_vendors/bill_vendors` | `bill_vendors` |
+| Bill payments | `bill_payments/bill_payments` | `bill_payments` |
+
+`projects/tasks` is in the **accounting** family (accountId) despite the prefix.
+
+### `total` can exceed the rows you get back
+
+Verified live: expenses returned `total: 16` with an empty array — the count includes
+records the identity cannot read, and paging never surfaces them. Always check both:
+
+```sh
+fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=100" \
+  | jq '{total: .response.result.total, rows: (.response.result.expenses|length)}'
+```
+
+If `rows` is 0 while `total` is not, that is a permission boundary, not an empty account.
 
 ```sh
 fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=50" \
@@ -112,16 +138,34 @@ fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=50" \
 
 ## Projects and time tracking — different id, different envelope
 
-These take `businessId` and return **bare** objects, not `.response.result`:
+These take `businessId` and return **bare** objects, not `.response.result`. Pagination
+lives under `meta`, so `.response.result.total` reads `undefined` here and looks like an
+empty account:
 
 ```sh
-fb_curl "/projects/business/$BIZ/projects" | jq '[.projects[] | {id, title, client_id, active}]'
+fb_curl "/projects/business/$BIZ/projects" \
+  | jq '{meta, projects: [.projects[] | {id, title, client_id, active}]}'
 
+# time_entries' meta also carries total_logged and total_unbilled
 fb_curl "/timetracking/business/$BIZ/time_entries" \
-  | jq '[.time_entries[] | {id, project_id, duration, started_at, note}]'
+  | jq '{logged: .meta.total_logged, unbilled: .meta.total_unbilled,
+         entries: [.time_entries[] | {id, project_id, duration, started_at, note}]}'
+
+fb_curl "/comments/business/$BIZ/services" | jq '[.services[] | {id, name, billable}]'
 ```
 
 Errors here are `.error`, a plain string — not `.response.errors[]`.
+
+These endpoints work on a business with **no accounting account**, so they can succeed
+when every `/accounting/account/...` call fails.
+
+Log time (duration is in **seconds**):
+
+```sh
+fb_curl "/timetracking/business/$BIZ/time_entries" -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"time_entry":{"duration":3600,"started_at":"2026-08-12T09:00:00Z","note":"Design review"}}'
+```
 
 ## Pagination
 

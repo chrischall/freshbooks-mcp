@@ -64,6 +64,15 @@ adopted, so re-bootstrapping is the supported recovery path.
 | `freshbooks_create_invoice` | Create an invoice — confirm-gated |
 | `freshbooks_update_invoice` | Update an invoice — confirm-gated |
 | `freshbooks_record_payment` | Record a payment against an invoice — confirm-gated |
+| `freshbooks_list_expenses` / `freshbooks_get_expense` | Browse and fetch expenses |
+| `freshbooks_list_expense_categories` | Categories supplying `categoryid` for new expenses |
+| `freshbooks_create_expense` | Record an expense — confirm-gated |
+| `freshbooks_list_projects` / `freshbooks_get_project` | Projects (businessId-keyed) |
+| `freshbooks_create_project` | Create a project — confirm-gated |
+| `freshbooks_list_time_entries` | Tracked time, with `total_logged` / `total_unbilled` |
+| `freshbooks_create_time_entry` | Log time in seconds — confirm-gated |
+| `freshbooks_list_services` | Billable work types for projects and time entries |
+| `freshbooks_list_records` / `freshbooks_get_record` | Generic accessor for the accounting long tail (taxes, credit notes, invoice profiles, tasks, staff, gateways, bills, bill vendors, bill payments, other income) |
 
 **Confirm-gated** means the tool makes *no* network call unless `confirm: true` is passed;
 without it you get a dry-run preview of exactly what would be sent.
@@ -79,6 +88,15 @@ your OAuth token carries all the `:write` scopes.
 `freshbooks_get_identity` reports `accountRole` and `businessRole` so this is visible up
 front. If `accountRole` is `client`, the invoicing write tools will not work against that
 account — that is an account permission, not a configuration problem.
+
+### Two things the API reports misleadingly
+
+- **`total` counts records you may not be able to read.** Expenses reported `total: 16`
+  while returning zero rows. List results attach a `note` when that happens, so it reads
+  as a permission boundary rather than an empty account.
+- **Projects and time tracking are keyed by `businessId`, not `accountId`**, and paginate
+  under a `meta` block instead of flat `page`/`pages`/`total`. They also work on a
+  business with no accounting account at all.
 
 ## The three identifiers
 
