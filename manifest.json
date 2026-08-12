@@ -3,20 +3,35 @@
   "manifest_version": "0.3",
   "name": "freshbooks-mcp",
   "display_name": "FreshBooks",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "FreshBooks invoicing and accounts receivable for Claude — manage invoices, clients, estimates, and payments via natural language",
-  "author": { "name": "Chris Chall", "email": "chris.c.hall@gmail.com", "url": "https://github.com/chrischall" },
-  "repository": { "type": "git", "url": "https://github.com/chrischall/freshbooks-mcp" },
+  "author": {
+    "name": "Chris Chall",
+    "email": "chris.c.hall@gmail.com",
+    "url": "https://github.com/chrischall"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrischall/freshbooks-mcp"
+  },
   "homepage": "https://github.com/chrischall/freshbooks-mcp",
   "support": "https://github.com/chrischall/freshbooks-mcp/issues",
   "license": "MIT",
-  "keywords": ["freshbooks","invoicing","accounting","finance","invoices"],
+  "keywords": [
+    "freshbooks",
+    "invoicing",
+    "accounting",
+    "finance",
+    "invoices"
+  ],
   "server": {
     "type": "node",
     "entry_point": "dist/bundle.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/bundle.js"],
+      "args": [
+        "${__dirname}/dist/bundle.js"
+      ],
       "env": {
         "FRESHBOOKS_CLIENT_ID": "${user_config.freshbooks_client_id}",
         "FRESHBOOKS_CLIENT_SECRET": "${user_config.freshbooks_client_secret}",
@@ -25,9 +40,30 @@
     }
   },
   "user_config": {
-    "freshbooks_client_id": { "type": "string", "title": "Client ID", "description": "OAuth client ID from my.freshbooks.com/#/developer", "required": true },
-    "freshbooks_client_secret": { "type": "string", "title": "Client Secret", "description": "OAuth client secret", "required": true, "sensitive": true },
-    "freshbooks_refresh_token": { "type": "string", "title": "Refresh Token", "description": "Refresh token from the one-time OAuth bootstrap", "required": true, "sensitive": true }
+    "freshbooks_client_id": {
+      "type": "string",
+      "title": "Client ID",
+      "description": "OAuth client ID from my.freshbooks.com/#/developer",
+      "required": true
+    },
+    "freshbooks_client_secret": {
+      "type": "string",
+      "title": "Client Secret",
+      "description": "OAuth client secret",
+      "required": true,
+      "sensitive": true
+    },
+    "freshbooks_refresh_token": {
+      "type": "string",
+      "title": "Refresh Token",
+      "description": "Refresh token from the one-time OAuth bootstrap",
+      "required": true,
+      "sensitive": true
+    }
   },
-  "compatibility": { "runtimes": { "node": ">=22.5" } }
+  "compatibility": {
+    "runtimes": {
+      "node": ">=22.5"
+    }
+  }
 }
