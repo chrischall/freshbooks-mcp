@@ -129,7 +129,17 @@ fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=100" \
   | jq '{total: .response.result.total, rows: (.response.result.expenses|length)}'
 ```
 
-If `rows` is 0 while `total` is not, that is a permission boundary, not an empty account.
+If `rows` is 0 while `total` is not **and you are on a page within range**, that is a
+permission boundary rather than an empty account. Check the page first — an empty page with
+a non-zero total is also just what paging past the end looks like:
+
+```sh
+fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=100" \
+  | jq '.response.result | {total, pages, page, rows: (.expenses|length),
+         verdict: (if (.expenses|length) > 0 then "ok"
+                   elif .page > .pages then "past the last page"
+                   else "rows withheld by permissions" end)}'
+```
 
 ```sh
 fb_curl "/accounting/account/$ACCT/expenses/expenses?per_page=50" \

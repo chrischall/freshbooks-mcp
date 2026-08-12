@@ -162,7 +162,13 @@ Verified live: `expenses` returned **`total: 16` with zero rows**, and `expense_
 returned **`total: 59` with zero rows**. The count includes records the identity lacks
 permission to read, and paging further never surfaces them. A consumer that trusts `total`
 reports "16 expenses" while showing none, or walks 16 empty pages. `accountingList` /
-`businessList` therefore attach a `note` whenever `total > 0` and no rows came back.
+`businessList` therefore attach a `note` when `total > 0`, no rows came back, **and the
+requested page is within range**.
+
+That last condition matters: an empty page with a non-zero total is also exactly what
+paging past the end looks like (`page: 99` of `pages: 1`). Annotating that as a permission
+boundary would be a confident wrong answer in the opposite direction, so an out-of-range
+page gets no note.
 
 ### Resource paths — several are not what you would guess
 

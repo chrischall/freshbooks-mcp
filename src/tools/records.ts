@@ -47,11 +47,15 @@ export function registerRecordTools(server: McpServer, client: FreshbooksClient)
     'freshbooks_get_record',
     {
       description:
-        'Get a single record from any FreshBooks accounting resource by name and numeric id.',
+        'Get a single record from any FreshBooks accounting resource by name and id. Ids are ' +
+        'numeric on every resource mapped here; the schema also accepts a string so an id ' +
+        'carried around as text still works.',
       annotations: { readOnlyHint: true },
       inputSchema: {
         resource: resourceArg,
-        id: z.union([z.number().int().positive(), z.string()]).describe('The record id'),
+        id: z
+          .union([z.number().int().positive(), z.string().min(1)])
+          .describe('The record id — numeric for all currently mapped resources'),
       },
     },
     async ({ resource, id }) => {
