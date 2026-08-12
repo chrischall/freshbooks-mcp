@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "freshbooks-mcp",
   "display_name": "FreshBooks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "FreshBooks invoicing and accounts receivable for Claude — manage invoices, clients, estimates, and payments via natural language",
   "author": {
     "name": "Chris Chall",
