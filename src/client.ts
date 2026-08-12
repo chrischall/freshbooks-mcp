@@ -36,6 +36,12 @@ export interface ListResult {
   total: number | null;
   /** Set when the response is self-inconsistent in a way worth reporting to the caller. */
   note?: string;
+  /**
+   * Non-pagination fields from a business-family `meta` block — `total_logged`,
+   * `total_unbilled`, `total_logged_per_client` and friends. Pagination is already
+   * surfaced above, so it is excluded here rather than duplicated.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export interface ListOptions {
@@ -298,8 +304,8 @@ export class FreshbooksClient {
     init: { method?: string; body?: unknown } = {},
   ): Promise<Record<string, unknown>> {
     const { businessId } = await this.getIdentity();
-    const prefix = family === 'projects' ? 'projects' : family === 'timetracking' ? 'timetracking' : 'comments';
-    const body = await this.request(`/${prefix}/business/${businessId}/${path}`, init);
+    // `family` IS the URL prefix for all three of these.
+    const body = await this.request(`/${family}/business/${businessId}/${path}`, init);
     return (body ?? {}) as Record<string, unknown>;
   }
 
@@ -317,11 +323,15 @@ export class FreshbooksClient {
     const result = await this.business(family, `${resourcePath}${query}`);
     const meta = (result.meta ?? {}) as Record<string, unknown>;
     const items = Array.isArray(result[listKey]) ? (result[listKey] as unknown[]) : [];
+    // Pagination is surfaced at the top level; pass the REST of meta through rather than
+    // dropping fields the time-entry tool advertises (total_logged, total_unbilled, …).
+    const { page: _p, pages: _pg, per_page: _pp, total: _t, ...extraMeta } = meta;
     return withVisibilityNote({
       items,
       page: asNumber(meta.page),
       pages: asNumber(meta.pages),
       total: asNumber(meta.total),
+      ...(Object.keys(extraMeta).length > 0 ? { meta: extraMeta } : {}),
     });
   }
 
@@ -331,7 +341,7 @@ export class FreshbooksClient {
     id: number | string,
     singleKey: string,
   ): Promise<unknown> {
-    const result = await this.business(family, `${resourcePath}/${id}`);
+    const result = await this.business(family, `${resourcePath}/${encodeURIComponent(String(id))}`);
     return result[singleKey] ?? result ?? null;
   }
 
@@ -343,13 +353,14 @@ export class FreshbooksClient {
     opts: { id?: number | string; method?: 'POST' | 'PUT' } = {},
   ): Promise<unknown> {
     const method = opts.method ?? (opts.id === undefined ? 'POST' : 'PUT');
-    const path = opts.id === undefined ? resourcePath : `${resourcePath}/${opts.id}`;
+    const path =
+      opts.id === undefined ? resourcePath : `${resourcePath}/${encodeURIComponent(String(opts.id))}`;
     const result = await this.business(family, path, { method, body: { [singleKey]: payload } });
     return result[singleKey] ?? null;
   }
 
   async accountingGet(resourcePath: string, id: number | string, singleKey: string): Promise<unknown> {
-    const result = await this.accounting(`${resourcePath}/${id}`);
+    const result = await this.accounting(`${resourcePath}/${encodeURIComponent(String(id))}`);
     return result[singleKey] ?? null;
   }
 
@@ -365,7 +376,8 @@ export class FreshbooksClient {
     opts: { id?: number | string; method?: 'POST' | 'PUT' } = {},
   ): Promise<unknown> {
     const method = opts.method ?? (opts.id === undefined ? 'POST' : 'PUT');
-    const path = opts.id === undefined ? resourcePath : `${resourcePath}/${opts.id}`;
+    const path =
+      opts.id === undefined ? resourcePath : `${resourcePath}/${encodeURIComponent(String(opts.id))}`;
     const result = await this.accounting(path, { method, body: { [singleKey]: payload } });
     return result[singleKey] ?? null;
   }
@@ -387,7 +399,11 @@ function hasErrorEnvelope(body: unknown): boolean {
  * caller reports "16 expenses" while showing none, or pages through 16 empty pages.
  */
 function withVisibilityNote(r: ListResult): ListResult {
-  if (r.items.length === 0 && r.total !== null && r.total > 0) {
+  // `items: 0` with `total > 0` is ALSO what paging past the end looks like. Claiming a
+  // permission boundary there is a confident wrong answer in the opposite direction from
+  // the one this note exists to prevent, so only annotate an in-range page.
+  const inRange = r.page === null || r.pages === null || r.page <= r.pages;
+  if (inRange && r.items.length === 0 && r.total !== null && r.total > 0) {
     return {
       ...r,
       note:

@@ -39,6 +39,9 @@ export const ACCOUNTING_RESOURCES = {
     list: 'tasks',
     note: 'Billable task catalogue. Accounting family (accountId) despite the "projects/" prefix.',
   },
+  // List key is `staff`, not `staffs` — confirmed live against a raw response
+  // (result keys: page, pages, per_page, staff, total). A wrong list key fails exactly
+  // like a gated resource does: empty items, no error.
   staff: { path: 'users/staffs', single: 'staff', list: 'staff' },
   gateways: { path: 'systems/gateways', single: 'gateway', list: 'gateways' },
   bills: { path: 'bills/bills', single: 'bill', list: 'bills' },
@@ -52,6 +55,11 @@ export const ACCOUNTING_RESOURCES = {
     path: 'other_incomes/other_incomes',
     single: 'other_income',
     list: 'other_income',
+    // SDK-declared list key; the path resolves live but the account is gated
+    // (errno 1003), so no row has been observed to confirm `other_income` over
+    // `other_incomes`. If this returns empty on an account that HAS other income,
+    // suspect the key before the permissions.
+    note: 'List key unconfirmed by live rows — the probe account is permission-gated on this resource.',
   },
 } as const satisfies Record<string, AccountingResource>;
 
