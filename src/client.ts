@@ -44,8 +44,13 @@ export class WrongIdentifierError extends McpToolError {}
  */
 export class PermissionDeniedError extends McpToolError {}
 
-/** errno values FreshBooks uses for a role/permission refusal, as opposed to plan gating. */
-const PERMISSION_ERRNOS = new Set([1003, 2001]);
+/**
+ * errno values FreshBooks uses for a role/permission refusal, as opposed to plan gating.
+ * Only errnos actually observed as role refusals belong here — everything in this set
+ * inherits remediation text about account role, which is the wrong fix for anything else.
+ * 1003 is live-observed (other_income, "Permission Denied").
+ */
+const PERMISSION_ERRNOS = new Set([1003]);
 
 export interface ListResult {
   items: unknown[];

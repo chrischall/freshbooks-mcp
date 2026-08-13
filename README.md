@@ -98,9 +98,13 @@ other by design (a viewed estimate reads `status: 3`, `display_status: "viewed"`
   `estimate.decline` webhook. `freshbooks_decline_estimate` exists only to say so and
   point at the alternatives, rather than leave an agent to invent a write that changes
   nothing.
-- **Every write returns the re-fetched estimate**, plus `before` / `after` state and a
-  `changed` flag, so success is verified against the record rather than inferred from a
-  `200`.
+- **Every write returns the re-fetched estimate**, plus `before` / `after` state and
+  `changed` / `changedFields`, so success is verified against the record rather than
+  inferred from a `200`. `changed` covers the status fields *and* the fields that write
+  actually set, so a successful notes edit reports `changed: true` even though no status
+  moves. On `freshbooks_send_estimate` it describes the record only — emailing an
+  already-sent estimate moves nothing, and retrying on `changed: false` would send the
+  client a second copy.
 
 ## Writes require an owner/admin accounting account
 

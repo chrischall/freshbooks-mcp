@@ -59,8 +59,8 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       );
       if (gate) return gate;
 
-      await assertAccountingScope(client, id);
-      const before = await readEstimate(client, id);
+      await assertAccountIdShape(client);
+      const before = await readEstimateForWrite(client, id);
       if (isAccepted(before)) {
         // Idempotent rather than an error: the caller's intent ("this estimate should be
         // accepted") already holds. Re-sending action_accept on an accepted estimate has
@@ -68,6 +68,7 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
         // be undone, so the safe answer is to send nothing and say so.
         return textResult({
           changed: false,
+          changedFields: [],
           alreadyAccepted: true,
           before: stateOf(before),
           after: stateOf(before),
@@ -91,10 +92,10 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
         'action_accept in FreshBooks\' own API collection, and there is no estimate.decline webhook ' +
         'event. The tool exists so this answers with the reason instead of a plausible-looking write ' +
         'that changes nothing. Call it to get the alternatives.',
-      inputSchema: {
-        id: z.number().int().positive().describe('Estimate id'),
-        confirm: schemaConfirm,
-      },
+      // No `confirm` parameter, deliberately: everywhere else in this server `confirm`
+      // means "an executable write, behind a gate", so offering it here would invite a
+      // retry with confirm: true in the belief that decline exists and is merely gated.
+      inputSchema: { id: z.number().int().positive().describe('Estimate id') },
     },
     // No confirm gate and no network call: a dry-run preview here would advertise a
     // request that does not exist.
@@ -176,10 +177,13 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       );
       if (gate) return gate;
 
-      await assertAccountingScope(client, id);
-      const before = await readEstimate(client, id);
+      await assertAccountIdShape(client);
+      const before = await readEstimateForWrite(client, id);
+      const sentFields = Object.keys(payload);
       const written = await mutate(client, id, payload, 'update');
-      return textResult({ ...(await verify(client, id, before, written)), sentFields: Object.keys(payload) });
+      // Watch the fields this write actually set: the status projection alone never moves
+      // on a field edit, so `changed` would report every successful update as a no-op.
+      return textResult({ ...(await verify(client, id, before, written, sentFields)), sentFields });
     },
   );
 
@@ -221,32 +225,36 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       );
       if (gate) return gate;
 
-      await assertAccountingScope(client, id);
-      const before = await readEstimate(client, id);
+      await assertAccountIdShape(client);
+      const before = await readEstimateForWrite(client, id);
       const written = await mutate(client, id, payload, 'email');
-      return textResult({ ...(await verify(client, id, before, written)), emailed: true });
+      return textResult({
+        ...(await verify(client, id, before, written)),
+        emailed: true,
+        // `changed` here describes the RECORD, not the mail. Sending an estimate that was
+        // already sent moves nothing on it, and a caller who reads `changed: false` as
+        // "that didn't work" and retries puts a second email in a client's inbox.
+        sendNote:
+          'The email was accepted by FreshBooks. `changed` reports whether the estimate ' +
+          'record moved, which it need not for an already-sent estimate — do not retry on ' +
+          'the strength of changed: false.',
+      });
     },
   );
 }
 
 /**
- * Estimates are an ACCOUNTING resource, keyed by the alphanumeric accountId. Catch the
- * two ways a caller lands on the wrong identifier before the request goes out, because
- * FreshBooks answers both with a 404 that reads as "no such estimate".
+ * Estimates are an ACCOUNTING resource, keyed by the alphanumeric accountId. This catches
+ * the unambiguous half of the identifier trap: an accountId that is really one of the
+ * other two ids, which makes every accounting URL 404 regardless of the estimate id.
+ *
+ * The other half — a businessId passed as the estimate id — is NOT checked here, because
+ * the two are plain integers and a genuine estimate could collide with the businessId.
+ * That case is decided by whether the record reads (see `readEstimateForWrite`), so a
+ * real estimate is never blocked by a guess about its id.
  */
-async function assertAccountingScope(client: FreshbooksClient, id: number): Promise<void> {
+async function assertAccountIdShape(client: FreshbooksClient): Promise<void> {
   const identity = await client.getIdentity();
-  if (id === identity.businessId) {
-    throw new WrongIdentifierError(
-      `${id} is this account's businessId, not an estimate id. Estimates live on the accounting ` +
-        `family, addressed by accountId ${identity.accountId} plus the estimate's own id.`,
-      {
-        hint:
-          'businessId addresses /projects and /timetracking only. Get estimate ids from ' +
-          'freshbooks_list_estimates.',
-      },
-    );
-  }
   if (identity.accountId === String(identity.businessId) || identity.accountId === identity.businessUuid) {
     throw new WrongIdentifierError(
       `The resolved accountId is "${identity.accountId}", which is this account's ` +
@@ -256,6 +264,33 @@ async function assertAccountingScope(client: FreshbooksClient, id: number): Prom
         hint:
           'FRESHBOOKS_ACCOUNT_ID is almost certainly set to the wrong identifier. Unset it, or set ' +
           'it to the alphanumeric accountId reported by freshbooks_get_identity.',
+      },
+    );
+  }
+}
+
+/**
+ * The read every write starts from. When the record is not there AND the id given is this
+ * account's businessId, name that — FreshBooks answers a swapped identifier with the same
+ * 404 it gives a deleted estimate, and the two need different fixes. An estimate that
+ * really does carry that id reads fine and proceeds untouched.
+ */
+async function readEstimateForWrite(client: FreshbooksClient, id: number): Promise<unknown> {
+  try {
+    return await readEstimate(client, id);
+  } catch (err) {
+    const { businessId, accountId } = await client.getIdentity();
+    if (id !== businessId) throw err;
+    throw new WrongIdentifierError(
+      `No estimate ${id} on account ${accountId}, and ${id} is this account's businessId — the ` +
+        'likely mistake is a businessId in the estimate-id slot. Estimates are addressed by ' +
+        "accountId plus the estimate's own id.",
+      {
+        hint:
+          'businessId addresses /projects and /timetracking only. Get estimate ids from ' +
+          'freshbooks_list_estimates. (If an estimate really does have this id, it would have ' +
+          'been read here and this error would not have fired.)',
+        cause: err,
       },
     );
   }
@@ -299,15 +334,21 @@ async function mutate(
 }
 
 /**
- * Re-read the estimate after a write and report before/after state. The write's own
+ * Re-read the estimate after a write and report what actually moved. The write's own
  * response is not enough: a 200 that changed nothing looks identical to one that did,
  * which is the whole reason these tools return the object rather than a success flag.
+ *
+ * `watch` carries the fields THIS write was supposed to change, on top of the status
+ * projection. Without it a notes update would always report `changed: false` — the
+ * status fields never move on a field edit — and a caller would reasonably read that
+ * as "the write did nothing" and retry.
  */
 async function verify(
   client: FreshbooksClient,
   id: number,
   before: unknown,
   written: unknown,
+  watch: string[] = [],
 ): Promise<Record<string, unknown>> {
   let after = written;
   let refetched = true;
@@ -318,12 +359,17 @@ async function verify(
     // report a write that succeeded as a write that failed.
     refetched = false;
   }
-  const beforeState = stateOf(before);
-  const afterState = stateOf(after);
+  const b = asRecord(before);
+  const a = asRecord(after);
+  // `action_*` keys are instructions, not fields — they never appear on the record, so
+  // watching them would report every write as unapplied.
+  const watched = [...new Set([...STATE_KEYS, ...watch])].filter((k) => !k.startsWith('action_'));
+  const changedFields = watched.filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]));
   return {
-    changed: JSON.stringify(beforeState) !== JSON.stringify(afterState),
-    before: beforeState,
-    after: afterState,
+    changed: changedFields.length > 0,
+    changedFields,
+    before: stateOf(before),
+    after: stateOf(after),
     estimate: after,
     ...(refetched
       ? {}

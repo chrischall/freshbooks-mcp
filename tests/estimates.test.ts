@@ -74,6 +74,14 @@ function estimateServer(
     requests.push({ url: u, method, body: init.body });
     if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
 
+    // Only the stored estimate exists. Any other id comes back the way FreshBooks
+    // answers a miss — an envelope with no `estimate` — which is what the identifier
+    // guard keys off.
+    const asked = Number(u.split('/estimates/estimates/')[1]?.split('?')[0]);
+    if (Number.isFinite(asked) && asked !== stored.id) {
+      return new Response(JSON.stringify({ response: { result: {} } }), { status: 200 });
+    }
+
     if (method === 'PUT') {
       if (opts.writeResponse) return opts.writeResponse();
       const sent = (JSON.parse(String(init.body)) as { estimate: Record<string, unknown> }).estimate;
@@ -183,7 +191,7 @@ describe('freshbooks_decline_estimate', () => {
     const { client, requests } = estimateServer();
     const h = await harnessFor(client);
 
-    const res = await h.callTool('freshbooks_decline_estimate', { id: 279405, confirm: true });
+    const res = await h.callTool('freshbooks_decline_estimate', { id: 279405 });
 
     expect(res.isError).toBe(true);
     const text = JSON.stringify(res.content);
@@ -214,6 +222,11 @@ describe('freshbooks_update_estimate', () => {
       estimate: { notes: 'Deposit received 2026-08-13' },
     });
     expect(res.sentFields).toEqual(['notes']);
+    // `changed` must reflect the field this write set. Diffing only the status
+    // projection reported every successful field edit as changed: false, which reads
+    // as "the update did nothing" and invites a retry.
+    expect(res.changed).toBe(true);
+    expect(res.changedFields).toEqual(['notes']);
     expect(res.estimate.notes).toBe('Deposit received 2026-08-13');
     expect(res.estimate.terms).toBe('1/2 Up Front and Rest upon Completion');
     expect(res.estimate.description).toBe('Grind concrete, Install Moisture Vapor Barrier');
@@ -239,6 +252,23 @@ describe('freshbooks_update_estimate', () => {
         vis_state: 0,
       },
     });
+    await h.close();
+  });
+
+  it('reports changed: false when the field already held the value sent', async () => {
+    // Not a failure — the record genuinely did not move. Worth pinning so `changed`
+    // keeps describing the record rather than the request.
+    const { client } = estimateServer();
+    const h = await harnessFor(client);
+    const res = parseToolResult(
+      await h.callTool('freshbooks_update_estimate', {
+        id: 279405,
+        terms: '1/2 Up Front and Rest upon Completion',
+        confirm: true,
+      }),
+    ) as Record<string, any>;
+    expect(res.changed).toBe(false);
+    expect(res.changedFields).toEqual([]);
     await h.close();
   });
 
@@ -277,8 +307,15 @@ describe('freshbooks_send_estimate', () => {
   it('omits the recipient list so FreshBooks uses the client address on file', async () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
-    await h.callTool('freshbooks_send_estimate', { id: 279405, confirm: true });
+    const res = parseToolResult(
+      await h.callTool('freshbooks_send_estimate', { id: 279405, confirm: true }),
+    ) as Record<string, any>;
     expect(JSON.parse(String(puts()[0].body))).toEqual({ estimate: { action_email: true } });
+    // Emailing need not move anything on the record, so the reply must say that outright
+    // — a retry driven by changed: false sends the client a second copy.
+    expect(res.emailed).toBe(true);
+    expect(res.changed).toBe(false);
+    expect(res.sendNote).toMatch(/do not retry/i);
     await h.close();
   });
 });
@@ -336,15 +373,31 @@ describe('permission boundaries', () => {
 });
 
 describe('identifier guards', () => {
-  it('rejects the businessId in the estimate-id slot before any write', async () => {
+  it('names the businessId when an id that is one reads as no such estimate', async () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
     // 7 is the businessId in this identity — a plausible copy/paste, and one FreshBooks
-    // would answer with a bare 404.
+    // answers with the same nothing it gives a deleted estimate.
     const res = await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true });
     expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toMatch(/businessId, not an estimate id/);
+    expect(JSON.stringify(res.content)).toMatch(/businessId in the estimate-id slot/);
     expect(puts()).toHaveLength(0);
+    await h.close();
+  });
+
+  it('writes an estimate whose id collides with the businessId, since it reads', async () => {
+    // The guard must not be a hard block: the two identifiers are plain integers, so a
+    // real estimate can carry the businessId's value and must stay writable.
+    const { client, puts } = estimateServer({
+      estimate: { ...OPEN_ESTIMATE, id: 7, estimateid: 7 },
+      onWrite: acceptOnServer,
+    });
+    const h = await harnessFor(client);
+    const res = parseToolResult(
+      await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true }),
+    ) as Record<string, any>;
+    expect(res.after.accepted).toBe(true);
+    expect(puts()).toHaveLength(1);
     await h.close();
   });
 
