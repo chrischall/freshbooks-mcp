@@ -52,6 +52,8 @@ function estimateServer(
     onWrite?: (body: Record<string, unknown>, current: Record<string, unknown>) => Record<string, unknown>;
     /** Overrides the PUT response entirely (used for the permission paths). */
     writeResponse?: () => Response;
+    /** Overrides the estimate GET entirely (used for a read that fails rather than misses). */
+    readResponse?: () => Response;
   } = {},
 ) {
   const requests: Recorded[] = [];
@@ -78,6 +80,7 @@ function estimateServer(
     // answers a miss — an envelope with no `estimate` — which is what the identifier
     // guard keys off.
     const asked = Number(u.split('/estimates/estimates/')[1]?.split('?')[0]);
+    if (method === 'GET' && opts.readResponse) return opts.readResponse();
     if (Number.isFinite(asked) && asked !== stored.id) {
       return new Response(JSON.stringify({ response: { result: {} } }), { status: 200 });
     }
@@ -138,6 +141,20 @@ describe('freshbooks_accept_estimate', () => {
 
     // Read, write, read: the after-state is re-fetched rather than assumed from the 200.
     expect(requests.filter((r) => r.method === 'GET' && r.url.includes('/estimates/'))).toHaveLength(2);
+    await h.close();
+  });
+
+  it('reports accepted: false when the PUT returns 200 but the record did not move', async () => {
+    // The whole point of re-reading: a 200 is not acceptance. `accepted` must come off
+    // the record, since that is the field a caller keys off.
+    const { client } = estimateServer({ onWrite: (_sent, current) => current });
+    const h = await harnessFor(client);
+    const res = parseToolResult(
+      await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true }),
+    ) as Record<string, any>;
+    expect(res.accepted).toBe(false);
+    expect(res.changed).toBe(false);
+    expect(res.after.accepted).toBe(false);
     await h.close();
   });
 
@@ -382,6 +399,25 @@ describe('identifier guards', () => {
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/businessId in the estimate-id slot/);
     expect(puts()).toHaveLength(0);
+    await h.close();
+  });
+
+  it('does not relabel a failed read as a wrong identifier', async () => {
+    // Only a miss may be reinterpreted. A 403 on the read says nothing about whether the
+    // record exists, and calling it a bad id sends the reader after the wrong problem —
+    // even when the id does happen to equal the businessId.
+    const { client } = estimateServer({
+      readResponse: () =>
+        new Response(JSON.stringify({ response: { errors: [{ message: 'Permission Denied', errno: 1003 }] } }), {
+          status: 403,
+        }),
+    });
+    const h = await harnessFor(client);
+    const res = await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true });
+    expect(res.isError).toBe(true);
+    const text = JSON.stringify(res.content);
+    expect(text).toMatch(/denied/i);
+    expect(text).not.toMatch(/estimate-id slot/);
     await h.close();
   });
 

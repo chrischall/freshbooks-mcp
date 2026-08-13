@@ -78,7 +78,12 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       }
 
       const written = await mutate(client, id, { action_accept: true }, 'accept');
-      return textResult({ ...(await verify(client, id, before, written)), accepted: true });
+      const result = await verify(client, id, before, written);
+      // Read `accepted` off the record, never off the fact that the PUT returned 200 —
+      // reporting acceptance the API did not perform is the failure this whole tool is
+      // shaped to avoid. Same predicate as the already-accepted branch above, so the two
+      // agree on what accepted means.
+      return textResult({ ...result, accepted: isAccepted(result.estimate) });
     },
   );
 
@@ -279,6 +284,11 @@ async function readEstimateForWrite(client: FreshbooksClient, id: number): Promi
   try {
     return await readEstimate(client, id);
   } catch (err) {
+    // Only a genuine miss may be reinterpreted. A 403, a 429 or an outage says nothing
+    // about whether the record exists, and relabelling one of those as a wrong
+    // identifier would send the reader after an id that was never the problem.
+    const isMiss = err instanceof EstimateNotFoundError || (err instanceof McpToolError && /returned 404/.test(err.message));
+    if (!isMiss) throw err;
     const { businessId, accountId } = await client.getIdentity();
     if (id !== businessId) throw err;
     throw new WrongIdentifierError(
@@ -296,11 +306,14 @@ async function readEstimateForWrite(client: FreshbooksClient, id: number): Promi
   }
 }
 
+/** The read came back with no such record — distinct from the read failing. */
+class EstimateNotFoundError extends McpToolError {}
+
 /** Fetch an estimate, turning "no such record" into a message that names the likely cause. */
 async function readEstimate(client: FreshbooksClient, id: number): Promise<unknown> {
   const estimate = await client.accountingGet(EST.path, id, EST.single);
   if (estimate === null || estimate === undefined) {
-    throw new McpToolError(`FreshBooks returned no estimate ${id}.`, {
+    throw new EstimateNotFoundError(`FreshBooks returned no estimate ${id}.`, {
       hint:
         'Confirm the id with freshbooks_list_estimates — an estimate id is not the estimate NUMBER ' +
         'shown on the document (e.g. id 279405 vs number "0000654").',
