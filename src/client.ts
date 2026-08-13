@@ -29,6 +29,29 @@ export interface Identity {
 /** Families keyed by businessId rather than accountId, each on its own URL prefix. */
 export type BusinessFamily = 'projects' | 'timetracking' | 'comments';
 
+/**
+ * One of the three identifiers was used in a slot that wants a different one. Named
+ * rather than left to FreshBooks, which answers a swapped identifier with a bare `404`
+ * that reads as "no such record" — the single most expensive wrong turn on this API.
+ */
+export class WrongIdentifierError extends McpToolError {}
+
+/**
+ * The identity may read the record but not write it. FreshBooks signals this three
+ * different ways (403, a 200 carrying errno 1003, or a 404 on the write path for a
+ * record that reads fine), so the classification lives in one named error rather
+ * than in each caller's string matching.
+ */
+export class PermissionDeniedError extends McpToolError {}
+
+/**
+ * errno values FreshBooks uses for a role/permission refusal, as opposed to plan gating.
+ * Only errnos actually observed as role refusals belong here — everything in this set
+ * inherits remediation text about account role, which is the wrong fix for anything else.
+ * 1003 is live-observed (other_income, "Permission Denied").
+ */
+const PERMISSION_ERRNOS = new Set([1003]);
+
 export interface ListResult {
   items: unknown[];
   page: number | null;
@@ -161,6 +184,13 @@ export class FreshbooksClient {
           're-run the OAuth bootstrap.',
       });
     }
+    // Role refusals do not always arrive as 403: the accounting family also delivers
+    // errno 1003 with HTTP 200 (verified live on other_income). Classifying on status
+    // alone turns that into a generic "failed (HTTP 200)", which reads as a bug in this
+    // client rather than as "your identity is not allowed to do that".
+    if (status === 403 || isPermissionRefusal(detail, body)) {
+      return this.permissionError(`FreshBooks denied the request: ${detail}`);
+    }
     if (status === 404) {
       return new McpToolError(`FreshBooks returned 404 for ${method} ${path}: ${detail}`, {
         hint:
@@ -168,23 +198,6 @@ export class FreshbooksClient {
           'and /payments/account take the alphanumeric accountId, /projects/business and ' +
           '/timetracking/business take the integer businessId, and /accounting/businesses takes the ' +
           'businessUuid. Confirm which one this endpoint expects.',
-      });
-    }
-    if (status === 403) {
-      // Scopes are the obvious suspect and usually NOT the cause: a token can carry
-      // every `:write` scope and still 403 because the identity is only a CLIENT on
-      // this account. Name that first so the reader doesn't go re-checking scopes.
-      const role = this.identityCache?.accountRole;
-      const roleNote =
-        role !== null && role !== undefined
-          ? `This identity's role on account ${this.identityCache?.accountId} is "${role}".`
-          : '';
-      return new McpToolError(`FreshBooks denied the request: ${detail}`, {
-        hint:
-          `${roleNote} Writes require owner or admin access to the accounting account; a "client" ` +
-          'role can read records addressed to it but cannot create or modify any. This is an account ' +
-          'permission, not an OAuth scope — check freshbooks_get_identity, and note that owning a ' +
-          'business whose account_id is null means that business has no accounting account to write to.',
       });
     }
     if (status === 429) {
@@ -195,6 +208,31 @@ export class FreshbooksClient {
     return new McpToolError(
       truncateErrorMessage(`FreshBooks ${method} ${path} failed (HTTP ${status}): ${detail}`),
     );
+  }
+
+  /**
+   * The role-aware permission failure. Every path that concludes "you may read this
+   * but not write it" builds its message here, so the remediation text stays in one
+   * place and always names the role rather than sending the reader after scopes.
+   */
+  permissionError(message: string): PermissionDeniedError {
+    // Scopes are the obvious suspect and usually NOT the cause: a token can carry
+    // every `:write` scope and still be refused because the identity is only a CLIENT
+    // on this account. Name that first so the reader doesn't go re-checking scopes.
+    const role = this.identityCache?.accountRole;
+    const roleNote =
+      role !== null && role !== undefined
+        ? `This identity's role on account ${this.identityCache?.accountId} is "${role}". `
+        : '';
+    const remedy =
+      `${roleNote}Writes require owner or admin access to the accounting account; a "client" ` +
+      'role can read records addressed to it but cannot create or modify any. This is an account ' +
+      'permission, not an OAuth scope — check freshbooks_get_identity, and note that owning a ' +
+      'business whose account_id is null means that business has no accounting account to write to.';
+    // The remediation goes in the MESSAGE, not only the hint: the MCP tool boundary
+    // forwards `error.message` and drops everything else, so a hint-only explanation
+    // never reaches the caller who needs it.
+    return new PermissionDeniedError(`${message} ${remedy}`, { hint: remedy });
   }
 
   /**
@@ -381,6 +419,28 @@ export class FreshbooksClient {
     const result = await this.accounting(path, { method, body: { [singleKey]: payload } });
     return result[singleKey] ?? null;
   }
+}
+
+/**
+ * True when an error body describes a role/permission refusal rather than a missing
+ * feature. Deliberately narrow: errno 12001 ("You do not have access to items.") is
+ * plan gating, not a role, and calling that a permission problem sends the reader to
+ * the wrong fix.
+ */
+function isPermissionRefusal(detail: string, body: unknown): boolean {
+  const errno = extractErrorNumber(body);
+  if (errno !== null && PERMISSION_ERRNOS.has(errno)) return true;
+  return /permission denied/i.test(detail);
+}
+
+/** Pull `errno` out of the accounting family's `response.errors[]` envelope. */
+function extractErrorNumber(body: unknown): number | null {
+  if (body === null || typeof body !== 'object') return null;
+  const respErrors = ((body as Record<string, unknown>).response as Record<string, unknown> | undefined)
+    ?.errors;
+  const first = Array.isArray(respErrors) ? respErrors[0] : respErrors;
+  if (first === null || first === undefined || typeof first !== 'object') return null;
+  return asNumber((first as Record<string, unknown>).errno);
 }
 
 /** True when the body carries one of the recognized error envelopes. */

@@ -92,6 +92,32 @@ fb_curl "/accounting/account/$ACCT/payments/payments" -X POST \
   -d '{"payment":{"invoiceid":456,"amount":{"amount":"1500.00","code":"USD"},"date":"2026-08-12","type":"Check"}}'
 ```
 
+## Estimates — accepting is an action, not a status write
+
+`status`, `display_status` and `ui_status` are computed read-only fields and disagree with
+each other (`status: 3` / `"viewed"` / `"open"` are the same estimate). Writing them does
+nothing. Acceptance is an action on the estimate **(unverified — collection-derived)**:
+
+```sh
+fb_curl "/accounting/account/$ACCT/estimates/estimates/279405" -X PUT \
+  -H 'Content-Type: application/json' \
+  -d '{"estimate":{"action_accept":true}}' \
+  | jq '.response.result.estimate | {id, accepted, status, display_status, ui_status}'
+```
+
+Email it to the client — note `estimate_customized_email`, not the invoice endpoint's
+`invoice_customized_email`:
+
+```sh
+fb_curl "/accounting/account/$ACCT/estimates/estimates/279405" -X PUT \
+  -H 'Content-Type: application/json' \
+  -d '{"estimate":{"action_email":true,"email_recipients":["client@example.com"]}}'
+```
+
+There is **no decline**: no declined status, no `action_deny`, no `estimate.decline`
+webhook. The nearest expressible thing is the soft delete, `{"estimate":{"vis_state":1}}`,
+which removes it rather than declining it.
+
 ## Full accounting resource map
 
 Same family and envelope; only the path suffix and list key change. Four of these are not

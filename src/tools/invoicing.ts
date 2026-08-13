@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { textResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { previewUnlessConfirmed, schemaConfirm } from './_confirm.js';
+import { lineSchema } from './_lines.js';
 
 import { ACCOUNTING_RESOURCES } from '../resources.js';
 
@@ -29,22 +30,6 @@ const pageArgs = {
         '{"include[]": "lines"}. Field names are not validated.',
     ),
 };
-
-/** Line item on an invoice or estimate. */
-const lineSchema = z
-  .object({
-    name: z.string().optional().describe('Line item name'),
-    description: z.string().optional(),
-    qty: z.union([z.number(), z.string()]).optional().describe('Quantity'),
-    unit_cost: z
-      .object({
-        amount: z.string().describe('Decimal amount as a string, e.g. "150.00"'),
-        code: z.string().describe('Currency code, e.g. "USD"'),
-      })
-      .optional()
-      .describe('Unit cost. FreshBooks represents money as {amount, code} with amount as a string.'),
-  })
-  .passthrough();
 
 export function registerInvoicingTools(server: McpServer, client: FreshbooksClient): void {
   // ---- Reads -------------------------------------------------------------

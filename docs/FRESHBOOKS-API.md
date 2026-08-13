@@ -245,6 +245,50 @@ Path suffixes as used by the SDK — note several are doubled (`invoices/invoice
 | Taxes | `taxes/taxes` | `tax` / `taxes` |
 | Expenses | `expenses/expenses` | `expense` / `expenses` |
 
+### Estimate actions — the docs page does not have them, the Postman collection does
+
+The public [estimates page](https://www.freshbooks.com/api/estimates) lists `status`,
+`ui_status`, `display_status`, `invoiced` and `sentid` under **Computed Fields (read only)**, and
+documents only GET / POST / PUT / delete. It describes **no** accept, decline or email operation —
+the only route to `accepted` it mentions is creating an invoice from the estimate. Reading only
+that page, the obvious move is to PUT a `status` or `display_status`, which does nothing.
+
+FreshBooks' own **Postman collection** — linked from
+[freshbooks.com/api/postman-collection](https://www.freshbooks.com/api/postman-collection), served at
+`documenter.getpostman.com/view/3322108/S1ERwwza` — carries the requests the page omits:
+
+| Action | Request |
+| --- | --- |
+| Accept | `PUT /accounting/account/{accountId}/estimates/estimates/{id}` → `{"estimate": {"action_accept": true}}` |
+| Email to client | same PUT → `{"estimate": {"action_email": true, "email_recipients": ["…"], "estimate_customized_email": {"subject": "…", "body": "…"}}}` |
+| Soft delete | same PUT → `{"estimate": {"vis_state": 1}}` |
+
+Note `estimate_customized_email` — the invoices endpoint uses `invoice_customized_email`, and the
+analogy does not carry. Estimates also have no `action_mark_as_sent`; invoices do.
+
+#### ⚠️ There is no way to decline an estimate
+
+Not an oversight in this server — the API has no representation for it:
+
+- Statuses are `1 Draft, 2 Sent, 3 Viewed, 4 Replied, 5 Accepted, 6 Invoiced`; the UI-status list is
+  `created / draft / sent / viewed / replied / accepted / invoiced`. No declined or rejected state.
+- No `action_deny` / `action_decline` / `action_reject` anywhere in the official collection —
+  `action_accept` has no counterpart.
+- Webhook events for estimates are `estimate.create`, `estimate.update`, `estimate.delete` only.
+
+`freshbooks_decline_estimate` therefore refuses and explains, rather than sending a plausible-looking
+write that silently changes nothing.
+
+#### Live shape (real account, 2026-08-13)
+
+`GET estimates/estimates/279405` returns `accepted: false` — a field the docs' own field table does
+not list — alongside `status: 3`, `display_status: "viewed"`, `ui_status: "open"`. The three status
+fields genuinely disagree, which is why none of them is the lever, and why the write tools return
+the re-fetched object with before/after state instead of reporting success from a `200`.
+
+**Accept is not verified live**: the probe identity is a `client` on `XyM7Y3`, so every estimate
+write 403s. The request shapes above are from FreshBooks' own collection, not from a successful call.
+
 Deletes on the accounting family are frequently **soft deletes via update** (`vis_state`), not HTTP
 `DELETE` — the SDK carries a `delete_via_update` flag per resource for exactly this. Confirm per
 resource before wiring a delete tool.
@@ -253,6 +297,10 @@ resource before wiring a delete tool.
 
 - [x] `/users/me` payload — verified; see the `account_id` caveat above.
 - [x] Accounting list pagination — `page` / `per_page` params, `page`/`pages`/`per_page`/`total` on the envelope.
+- [ ] **Estimate `action_accept` / `action_email` unverified live** — collection-derived; the probe
+      identity's `client` role 403s every estimate write. Also unverified: whether re-sending
+      `action_accept` on an already-accepted estimate is inert (this server does not send it) and
+      whether a `lines` update replaces or merges the line set.
 - [ ] **Write bodies remain unverified.** A live write test was attempted and returned `403` — not because the request was malformed, but because the only accounting account reachable by the test identity holds a `client` role. Verifying writes requires an identity with `owner`/`admin` on an accounting account. The request *shapes* are still SDK-derived.
 - [ ] Which invoicing resources soft-delete via `vis_state` vs. accept `DELETE`.
 - [ ] Whether `Api-Version: alpha` is required, optional, or ignored on each family.

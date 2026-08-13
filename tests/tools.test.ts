@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import { FreshbooksClient } from '../src/client.js';
 import { registerAccountTools } from '../src/tools/account.js';
+import { registerEstimateTools } from '../src/tools/estimates.js';
 import { registerExpenseTools } from '../src/tools/expenses.js';
 import { registerInvoicingTools } from '../src/tools/invoicing.js';
 import { registerProjectTools } from '../src/tools/projects.js';
@@ -51,6 +52,7 @@ describe('tool roster', () => {
     const h = await createTestHarness((s) => {
       registerAccountTools(s, client);
       registerInvoicingTools(s, client);
+      registerEstimateTools(s, client);
       registerExpenseTools(s, client);
       registerProjectTools(s, client);
       registerRecordTools(s, client);
@@ -61,6 +63,9 @@ describe('tool roster', () => {
     expect(names).toContain('freshbooks_get_invoice');
     expect(names).toContain('freshbooks_create_invoice');
     expect(names).toContain('freshbooks_record_payment');
+    expect(names).toContain('freshbooks_accept_estimate');
+    expect(names).toContain('freshbooks_update_estimate');
+    expect(names).toContain('freshbooks_send_estimate');
     expect(names).toContain('freshbooks_list_expenses');
     expect(names).toContain('freshbooks_list_projects');
     expect(names).toContain('freshbooks_list_time_entries');
@@ -78,6 +83,9 @@ describe('confirm gate', () => {
     ['freshbooks_create_client', { email: 'x@example.com' }],
     ['freshbooks_update_invoice', { id: 5, fields: { notes: 'hi' } }],
     ['freshbooks_record_payment', { invoiceid: 5, amount: { amount: '10.00', code: 'USD' } }],
+    ['freshbooks_accept_estimate', { id: 279405 }],
+    ['freshbooks_update_estimate', { id: 279405, notes: 'hi' }],
+    ['freshbooks_send_estimate', { id: 279405 }],
     ['freshbooks_create_expense', { amount: { amount: '10.00', code: 'USD' } }],
     ['freshbooks_create_project', { title: 'Patio' }],
     ['freshbooks_create_time_entry', { duration: 3600, started_at: '2026-08-12T09:00:00Z' }],
@@ -89,6 +97,7 @@ describe('confirm gate', () => {
     const { requests, client } = trackedClient();
     const h = await createTestHarness((s) => {
       registerInvoicingTools(s, client);
+      registerEstimateTools(s, client);
       registerExpenseTools(s, client);
       registerProjectTools(s, client);
     });
