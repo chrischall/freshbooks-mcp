@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.2.0...v0.3.0) (2026-08-13)
+
+
+### Features
+
+* add estimate write tools (accept, update, send) ([#6](https://github.com/chrischall/freshbooks-mcp/issues/6)) ([03fbd27](https://github.com/chrischall/freshbooks-mcp/commit/03fbd275bb835ea3b5a76d59ef374e329a56e0b6))
+
 ## [0.2.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.1.0...v0.2.0) (2026-08-12)
 
 
