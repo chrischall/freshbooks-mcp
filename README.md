@@ -64,6 +64,10 @@ adopted, so re-bootstrapping is the supported recovery path.
 | `freshbooks_create_invoice` | Create an invoice — confirm-gated |
 | `freshbooks_update_invoice` | Update an invoice — confirm-gated |
 | `freshbooks_record_payment` | Record a payment against an invoice — confirm-gated |
+| `freshbooks_accept_estimate` | Accept an estimate (`action_accept`) — confirm-gated, idempotent |
+| `freshbooks_update_estimate` | Update an estimate's lines, notes, terms, presentation — confirm-gated |
+| `freshbooks_send_estimate` | Email an estimate to the client (`action_email`) — confirm-gated |
+| `freshbooks_decline_estimate` | Always fails: FreshBooks has no decline. Answers with the alternatives |
 | `freshbooks_list_expenses` / `freshbooks_get_expense` | Browse and fetch expenses |
 | `freshbooks_list_expense_categories` | Categories supplying `categoryid` for new expenses |
 | `freshbooks_create_expense` | Record an expense — confirm-gated |
@@ -76,6 +80,27 @@ adopted, so re-bootstrapping is the supported recovery path.
 
 **Confirm-gated** means the tool makes *no* network call unless `confirm: true` is passed;
 without it you get a dry-run preview of exactly what would be sent.
+
+### Estimate writes
+
+Acceptance is an **action on the estimate**, not a status field: `status` (int),
+`display_status` and `ui_status` are computed and read-only, and they disagree with each
+other by design (a viewed estimate reads `status: 3`, `display_status: "viewed"`,
+`ui_status: "open"`). Accepting is `PUT estimates/estimates/{id}` with
+`{"estimate": {"action_accept": true}}` — see
+[`docs/FRESHBOOKS-API.md`](docs/FRESHBOOKS-API.md) for where that shape comes from.
+
+- **Accept is idempotent.** An estimate already accepted (or invoiced) comes back with
+  `changed: false` and no write is sent — acceptance cannot be undone through the API, so
+  a repeat call must not re-fire it.
+- **There is no decline.** FreshBooks' estimate statuses are draft / sent / viewed /
+  replied / accepted / invoiced; no declined state, no `action_deny`, no
+  `estimate.decline` webhook. `freshbooks_decline_estimate` exists only to say so and
+  point at the alternatives, rather than leave an agent to invent a write that changes
+  nothing.
+- **Every write returns the re-fetched estimate**, plus `before` / `after` state and a
+  `changed` flag, so success is verified against the record rather than inferred from a
+  `200`.
 
 ## Writes require an owner/admin accounting account
 

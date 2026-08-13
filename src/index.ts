@@ -2,6 +2,7 @@
 import { runMcp } from '@chrischall/mcp-utils';
 import { FreshbooksClient } from './client.js';
 import { registerAccountTools } from './tools/account.js';
+import { registerEstimateTools } from './tools/estimates.js';
 import { registerExpenseTools } from './tools/expenses.js';
 import { registerInvoicingTools } from './tools/invoicing.js';
 import { registerProjectTools } from './tools/projects.js';
@@ -21,6 +22,7 @@ await runMcp({
   tools: [
     registerAccountTools,
     registerInvoicingTools,
+    registerEstimateTools,
     registerExpenseTools,
     registerProjectTools,
     registerRecordTools,
