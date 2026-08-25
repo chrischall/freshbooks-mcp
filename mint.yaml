@@ -1,0 +1,49 @@
+version: 1
+name: FreshBooks
+slug: freshbooks
+summary: >-
+  FreshBooks invoicing and accounts receivable for Claude — manage invoices,
+  clients, estimates, and payments via natural language
+env:
+  - name: FRESHBOOKS_CLIENT_ID
+    required: true
+    help: >-
+      OAuth client ID from my.freshbooks.com/#/developer
+  - name: FRESHBOOKS_CLIENT_SECRET
+    secret: true
+    required: true
+    help: >-
+      OAuth client secret
+  - name: FRESHBOOKS_REFRESH_TOKEN
+    secret: true
+    required: true
+    help: >-
+      OAuth refresh token from the one-time bootstrap (rotates on every use)
+  - name: FRESHBOOKS_REDIRECT_URI
+    required: false
+    help: >-
+      Registered redirect URI; required on refresh calls too (default
+      https://localhost/callback)
+  - name: FRESHBOOKS_TOKEN_STORE
+    secret: true
+    required: false
+    help: >-
+      Path for the rotating-refresh-token store (default
+      ~/.freshbooks-mcp/session.json)
+  - name: FRESHBOOKS_ACCOUNT_ID
+    required: false
+    help: >-
+      Overrides the account id normally resolved from /auth/api/v1/users/me. Set
+      it explicitly when the authenticated identity belongs to no business
+      membership and resolution fails.
+state:
+  dataDir: true
+  reason: >-
+    Persists the saved session/token under $HOME so authentication survives a
+    restart. Without it every cold start re-authenticates, which a hosted
+    child may be unable to do unaided.
+egress:
+  allow:
+    # Only hosts the SERVER process actually fetches. Hosts that appear
+    # solely in a URL this server BUILDS and returns are excluded.
+    - api.freshbooks.com
