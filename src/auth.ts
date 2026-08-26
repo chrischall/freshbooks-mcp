@@ -214,11 +214,10 @@ export function createTokenManager(
     boundTo: config.refreshToken,
     validate: (raw) => (isBearerTokens(raw) ? raw : null),
   });
-  // `StatePersistence.load` is typed to allow a promise, so a sync composition
-  // needs the narrowing — createFileStatePersistence is synchronous by
-  // construction (one small file), and the legacy read below is too.
+  // No cast needed since mcp-utils 0.17.1: the file-backed store advertises
+  // SyncStatePersistence, so `load()` is already `BearerTokens | null`.
   const loadSync = (): BearerTokens | null =>
-    (store.load() as BearerTokens | null) ?? readLegacyStore(filePath, config.refreshToken);
+    store.load() ?? readLegacyStore(filePath, config.refreshToken);
   const persistence: StatePersistence<BearerTokens> = {
     load: loadSync,
     save: (tokens) => store.save(tokens),
