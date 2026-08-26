@@ -1,23 +1,30 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { McpToolError, expandPath, readEnvVar } from '@chrischall/mcp-utils';
-import { SessionStore, TokenManager } from '@chrischall/mcp-utils/session';
+import {
+  TokenManager,
+  createFileStatePersistence,
+  type BearerTokens,
+  type StatePersistence,
+} from '@chrischall/mcp-utils/session';
 
 const TOKEN_URL = 'https://api.freshbooks.com/auth/oauth/token';
 const DEFAULT_REDIRECT_URI = 'https://localhost';
 const STORE_KEY = 'freshbooks';
 
 /**
- * Persisted OAuth state.
+ * The LEGACY persisted shape, written by the `SessionStore` this server used
+ * before `@chrischall/mcp-utils` 0.17. Retained only so {@link readLegacyStore}
+ * can migrate an existing file — nothing writes it any more.
  *
- * `seededFromEnv` records the refresh token that was in the environment when this
- * store entry was created. FreshBooks rotates refresh tokens on every use, so the
- * stored token is normally *newer* than the one in `.env` and must win. The one
- * exception is a re-bootstrap: the human runs the authorize flow again and pastes a
- * fresh token into the environment. Comparing against `seededFromEnv` is what
- * distinguishes "env is stale, keep using the store" from "env changed, adopt it" —
- * without it, a re-bootstrap would be silently ignored and the account would stay
- * locked out behind a burned token.
+ * `seededFromEnv` recorded the refresh token that was in the environment when
+ * the entry was created. FreshBooks rotates refresh tokens on every use, so the
+ * stored token is normally *newer* than the one in `.env` and must win; the one
+ * exception is a re-bootstrap, where the human pastes a fresh token in and it
+ * should be adopted. That comparison now lives in the shared helper as
+ * `boundTo`, which binds a record to the credential that seeded it and stores
+ * only a salted digest rather than the token itself.
  */
 export interface FreshbooksSession extends Record<string, unknown> {
   key: string;
@@ -130,59 +137,117 @@ export async function exchangeRefreshToken(
 }
 
 /**
- * Build a TokenManager whose refresh persists the rotated token before returning.
+ * Read the pre-0.17 on-disk shape: a `SessionStore` JSON ARRAY of records.
  *
- * The persistence must happen inside the refresh function, not after it: `TokenManager`
- * updates its in-memory token and resolves, and if the process exits before the new token
- * reaches disk, the old one is already burned upstream and the account is locked out. A
- * failed write is therefore fatal rather than best-effort.
+ * Load-bearing on upgrade, not a nicety. FreshBooks rotates single-use refresh
+ * tokens, so the stored token has rotated PAST the one in the environment and
+ * the env copy is long spent. A build that could not read the old file would
+ * fall back to that dead token, 400, and strand the account until the human
+ * re-ran the OAuth bootstrap — an upgrade that costs access.
+ *
+ * Returns `null` when the file is absent, already migrated, corrupt, or seeded
+ * from a DIFFERENT env token (the human re-bootstrapped, so the env value wins).
+ * The next successful refresh rewrites the file in the current format.
+ */
+function readLegacyStore(filePath: string, envRefreshToken: string): BearerTokens | null {
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(filePath, 'utf8'));
+    if (!Array.isArray(raw)) return null; // already the current envelope
+    const rec = raw.find(
+      (r): r is FreshbooksSession =>
+        r !== null && typeof r === 'object' && (r as FreshbooksSession).key === STORE_KEY,
+    );
+    if (rec === undefined || rec.seededFromEnv !== envRefreshToken) return null;
+    if (typeof rec.refreshToken !== 'string' || rec.refreshToken === '') return null;
+    return {
+      accessToken: typeof rec.accessToken === 'string' ? rec.accessToken : '',
+      refreshToken: rec.refreshToken,
+      expiresAt: typeof rec.expiresAt === 'number' ? rec.expiresAt : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Narrow a stored record to a token pair. */
+function isBearerTokens(raw: unknown): raw is BearerTokens {
+  if (raw === null || typeof raw !== 'object') return false;
+  const t = raw as Partial<BearerTokens>;
+  return (
+    typeof t.accessToken === 'string' &&
+    typeof t.refreshToken === 'string' &&
+    t.refreshToken !== '' &&
+    typeof t.expiresAt === 'number'
+  );
+}
+
+/**
+ * Build a TokenManager over the shared persistence helpers.
+ *
+ * Three properties this has to keep, each of which used to be hand-rolled here:
+ *
+ *  - **The stored token wins over the environment**, because it has rotated past
+ *    it — unless the human re-bootstrapped, which `boundTo` now detects (it was
+ *    the `seededFromEnv` field) by binding the record to the env token that
+ *    seeded it.
+ *  - **A cached access token is reused** while valid. They last 12 hours, so
+ *    discarding one per process start would spend a single-use refresh token
+ *    per restart — pure churn, and every rotation is another chance to break
+ *    the chain.
+ *  - **A failed write is FATAL.** `TokenManager` persists the rotated token
+ *    before its refresh resolves to any caller, so no request ever runs on a
+ *    token that is not on disk; if the write fails, the old token is already
+ *    burned upstream and silence would lock the account out. `onPersistError`
+ *    throws, and the library wraps it so the failure can never be mistaken for
+ *    a revoked credential and trigger a store-clearing recovery.
  */
 export function createTokenManager(
   config: OAuthConfig,
   opts: { storePath?: string; fetchImpl?: typeof fetch } = {},
 ): TokenManager {
-  const store = new SessionStore<FreshbooksSession>({
-    filePath: opts.storePath ?? defaultStorePath(),
-    keyOf: (s) => s.key,
-    normalizeKey: (k) => k,
+  const filePath = opts.storePath ?? defaultStorePath();
+  const store = createFileStatePersistence<BearerTokens>({
+    filePath,
+    // Replaces `seededFromEnv`: the record is bound to the env token that seeded
+    // it, so a re-bootstrap discards it. Only a salted digest is written.
+    boundTo: config.refreshToken,
+    validate: (raw) => (isBearerTokens(raw) ? raw : null),
   });
+  // `StatePersistence.load` is typed to allow a promise, so a sync composition
+  // needs the narrowing — createFileStatePersistence is synchronous by
+  // construction (one small file), and the legacy read below is too.
+  const loadSync = (): BearerTokens | null =>
+    (store.load() as BearerTokens | null) ?? readLegacyStore(filePath, config.refreshToken);
+  const persistence: StatePersistence<BearerTokens> = {
+    load: loadSync,
+    save: (tokens) => store.save(tokens),
+    clear: () => store.clear(),
+  };
 
-  const stored = store.get(STORE_KEY);
-  // Prefer the stored token: it has rotated past whatever is in the environment. Fall
-  // back to the environment when there is no store yet, or when the human re-bootstrapped
-  // (env differs from the value this entry was seeded with).
-  const useStored = stored !== null && stored.seededFromEnv === config.refreshToken;
-  const initialRefresh = useStored ? (stored as FreshbooksSession).refreshToken : config.refreshToken;
-  const seededFromEnv = config.refreshToken;
-
-  // Reuse a cached access token while it is still valid. Access tokens last 12 hours,
-  // so discarding them on every process start would spend a single-use refresh token
-  // per restart — pure churn, and every rotation is another chance to lose the chain.
-  const cachedAccess = useStored ? ((stored as FreshbooksSession).accessToken ?? '') : '';
-  const cachedExpiry = useStored ? ((stored as FreshbooksSession).expiresAt ?? 0) : 0;
+  // Read here rather than handing TokenManager a bootstrap function: there is no
+  // login to defer, and a function form would make the manager persist this
+  // placeholder before the first refresh had produced anything worth storing.
+  const restored = loadSync();
 
   return new TokenManager({
-    initial: { accessToken: cachedAccess, refreshToken: initialRefresh, expiresAt: cachedExpiry },
+    initial: restored ?? { accessToken: '', refreshToken: config.refreshToken, expiresAt: 0 },
     refresh: async (refreshToken: string) => {
       const tok = await exchangeRefreshToken(config, refreshToken, opts.fetchImpl ?? fetch);
-      const expiresAt = (tok.created_at + tok.expires_in) * 1000;
-      try {
-        store.add({
-          key: STORE_KEY,
-          refreshToken: tok.refresh_token,
-          seededFromEnv,
-          accessToken: tok.access_token,
-          expiresAt,
-        });
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        throw new McpToolError(`Refreshed the FreshBooks token but could not persist it: ${detail}`, {
-          hint:
-            'The previous refresh token is now spent, so losing the new one locks the account out. ' +
-            'Fix the token store path/permissions and re-run the OAuth bootstrap.',
-        });
-      }
-      return { accessToken: tok.access_token, refreshToken: tok.refresh_token, expiresAt };
+      return {
+        accessToken: tok.access_token,
+        refreshToken: tok.refresh_token,
+        expiresAt: (tok.created_at + tok.expires_in) * 1000,
+      };
+    },
+    persistence,
+    onPersistError: (err) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new McpToolError(`Refreshed the FreshBooks token but could not persist it: ${detail}`, {
+        hint:
+          'The previous refresh token is now spent, so losing the new one locks the account out. ' +
+          'Fix the token store path/permissions and re-run the OAuth bootstrap.',
+      });
     },
   });
 }
