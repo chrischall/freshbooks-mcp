@@ -51,11 +51,15 @@ function fakeTokenServer(opts: { rejectAfter?: number } = {}) {
   return { fetchImpl, calls };
 }
 
-/** Push the stored access token's expiry into the past to force a refresh. */
+/**
+ * Push the stored access token's expiry into the past to force a refresh.
+ * Reaches into the mcp-utils envelope (`{ v, boundTo?, state }`) — the salted
+ * binding is left untouched so the record still verifies.
+ */
 function expireStoredAccessToken(): void {
-  const raw = JSON.parse(readFileSync(storePath, 'utf8')) as Record<string, { expiresAt: number }>;
-  for (const k of Object.keys(raw)) raw[k].expiresAt = Date.now() - 1000;
-  writeFileSync(storePath, JSON.stringify(raw));
+  const raw = JSON.parse(readFileSync(storePath, 'utf8')) as { state: { expiresAt: number } };
+  raw.state.expiresAt = Date.now() - 1000;
+  writeFileSync(storePath, JSON.stringify(raw), { mode: 0o600 });
 }
 
 describe('exchangeRefreshToken', () => {
@@ -170,5 +174,85 @@ describe('access token caching', () => {
     const second = fakeTokenServer();
     await createTokenManager(CONFIG, { storePath, fetchImpl: second.fetchImpl }).getAccessToken();
     expect(second.calls).toHaveLength(1);
+  });
+});
+
+describe('migration off the pre-0.17 SessionStore file', () => {
+  /** Write the legacy on-disk shape: a JSON ARRAY of session records. */
+  function writeLegacy(rec: Record<string, unknown>): void {
+    writeFileSync(storePath, JSON.stringify([rec], null, 2), { mode: 0o600 });
+  }
+
+  it('adopts a legacy stored token instead of replaying the dead env one', async () => {
+    // THE upgrade hazard. The stored token has rotated past the env copy, so the
+    // env copy is long spent. An upgrade that cannot read the legacy file would
+    // send that dead token and strand the account until the human re-bootstraps.
+    writeLegacy({
+      key: 'freshbooks',
+      refreshToken: 'rotated-9',
+      seededFromEnv: 'env-token-1',
+      accessToken: 'cached-access',
+      expiresAt: Date.now() + 11 * 60 * 60 * 1000,
+    });
+    const { fetchImpl, calls } = fakeTokenServer();
+    const tm = createTokenManager(CONFIG, { storePath, fetchImpl });
+
+    // The cached access token is still valid, so no refresh should be spent.
+    expect(await tm.getAccessToken()).toBe('cached-access');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('spends the legacy ROTATED token, never the env one, once the access token expires', async () => {
+    writeLegacy({
+      key: 'freshbooks',
+      refreshToken: 'rotated-9',
+      seededFromEnv: 'env-token-1',
+      accessToken: 'stale',
+      expiresAt: Date.now() - 1,
+    });
+    const { fetchImpl, calls } = fakeTokenServer();
+    await createTokenManager(CONFIG, { storePath, fetchImpl }).getAccessToken();
+    expect(calls[0].refresh_token).toBe('rotated-9');
+  });
+
+  it('ignores the legacy record when the human re-bootstrapped', async () => {
+    writeLegacy({
+      key: 'freshbooks',
+      refreshToken: 'old-chain',
+      seededFromEnv: 'a-previous-env-token',
+      accessToken: 'old-access',
+      expiresAt: Date.now() + 11 * 60 * 60 * 1000,
+    });
+    const { fetchImpl, calls } = fakeTokenServer();
+    await createTokenManager(CONFIG, { storePath, fetchImpl }).getAccessToken();
+    // env-token-1 was pasted on purpose; it must win over the older chain.
+    expect(calls[0].refresh_token).toBe('env-token-1');
+  });
+
+  it('rewrites the file in the current format on the next refresh', async () => {
+    writeLegacy({
+      key: 'freshbooks',
+      refreshToken: 'rotated-9',
+      seededFromEnv: 'env-token-1',
+      accessToken: 'stale',
+      expiresAt: Date.now() - 1,
+    });
+    const { fetchImpl } = fakeTokenServer();
+    await createTokenManager(CONFIG, { storePath, fetchImpl }).getAccessToken();
+    const body = JSON.parse(readFileSync(storePath, 'utf8')) as Record<string, unknown>;
+    expect(Array.isArray(body)).toBe(false);
+    expect(readFileSync(storePath, 'utf8')).toContain('rotated-1');
+  });
+});
+
+describe('a failed write stays fatal', () => {
+  it('refuses rather than silently losing a rotated single-use token', async () => {
+    const blocker = join(dir, 'blocker');
+    writeFileSync(blocker, 'x'); // parent is a FILE, so every write fails
+    const { fetchImpl } = fakeTokenServer();
+    const tm = createTokenManager(CONFIG, { storePath: join(blocker, 'session.json'), fetchImpl });
+    // The refresh SUCCEEDS and burns env-token-1 upstream. Silence here would
+    // lock the account out on the next start.
+    await expect(tm.getAccessToken()).rejects.toThrow(/persist/i);
   });
 });
