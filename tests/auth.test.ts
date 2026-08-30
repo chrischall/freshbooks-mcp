@@ -279,20 +279,17 @@ describe('hasRotated', () => {
     expect(hasRotated(CONFIG, { storePath })).toBe(true);
   });
 
-  it('is false while the stored token still equals the configured one', () => {
+  it('is false while the stored token still equals the configured one', async () => {
     // Seed a store whose refresh token is the configured one, mutating a REAL
     // record so the salted `boundTo` binding still verifies.
     const seed = fakeTokenServer();
-    return createTokenManager(CONFIG, { storePath, fetchImpl: seed.fetchImpl })
-      .getAccessToken()
-      .then(() => {
-        const raw = JSON.parse(readFileSync(storePath, 'utf8')) as {
-          state: { refreshToken: string };
-        };
-        raw.state.refreshToken = CONFIG.refreshToken;
-        writeFileSync(storePath, JSON.stringify(raw), { mode: 0o600 });
-        expect(hasRotated(CONFIG, { storePath })).toBe(false);
-      });
+    await createTokenManager(CONFIG, { storePath, fetchImpl: seed.fetchImpl }).getAccessToken();
+    const raw = JSON.parse(readFileSync(storePath, 'utf8')) as {
+      state: { refreshToken: string };
+    };
+    raw.state.refreshToken = CONFIG.refreshToken;
+    writeFileSync(storePath, JSON.stringify(raw), { mode: 0o600 });
+    expect(hasRotated(CONFIG, { storePath })).toBe(false);
   });
 
   it('never returns the token itself', async () => {
