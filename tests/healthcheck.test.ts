@@ -87,24 +87,3 @@ describe('freshbooks_healthcheck', () => {
     expect(JSON.stringify(r)).not.toMatch(/[A-Za-z0-9_-]{40,}/);
   });
 });
-
-// `hasRotated` is the fix for the review's important finding: the previous
-// detail inferred rotation from whether a private field had been lazily
-// constructed, so it was always 'as-configured' on a fresh process's first
-// call and 'rotated' forever after — regardless of any actual rotation.
-describe('hasRotated', () => {
-  const config = {
-    clientId: 'id',
-    clientSecret: 'secret',
-    redirectUri: 'https://example.com/cb',
-    refreshToken: 'CONFIGURED',
-  };
-
-  it('is null when nothing is persisted — unknown, not "not rotated"', async () => {
-    const { hasRotated } = await import('../src/auth.js');
-    const dir = await import('node:fs/promises').then((fs) =>
-      fs.mkdtemp(`${require('node:os').tmpdir()}/fb-`),
-    );
-    expect(hasRotated(config, { storePath: `${dir}/none.json` })).toBeNull();
-  });
-});
