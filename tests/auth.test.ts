@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTokenManager, exchangeRefreshToken, type OAuthConfig } from '../src/auth.js';
+import { createTokenManager, exchangeRefreshToken, hasRotated, type OAuthConfig } from '../src/auth.js';
 
 const CONFIG: OAuthConfig = {
   clientId: 'cid',
@@ -254,5 +254,50 @@ describe('a failed write stays fatal', () => {
     // The refresh SUCCEEDS and burns env-token-1 upstream. Silence here would
     // lock the account out on the next start.
     await expect(tm.getAccessToken()).rejects.toThrow(/persist/i);
+  });
+});
+
+/**
+ * `hasRotated` backs `freshbooks_healthcheck`'s one real diagnostic, so both
+ * comparison branches matter. It lives here rather than in the healthcheck
+ * tests because it reads the on-disk store, and the fixtures for that store
+ * (`storePath`, `fakeTokenServer`, `expireStoredAccessToken`, the temp dir and
+ * its cleanup) are all here.
+ */
+describe('hasRotated', () => {
+  it('is null when nothing is persisted — unknown, not "not rotated"', () => {
+    // The distinction is the point: a healthcheck must not report "your token
+    // is the configured one" when it has simply never looked.
+    expect(hasRotated(CONFIG, { storePath })).toBeNull();
+  });
+
+  it('is true once a refresh has replaced the configured token', async () => {
+    const first = fakeTokenServer();
+    await createTokenManager(CONFIG, { storePath, fetchImpl: first.fetchImpl }).getAccessToken();
+    // The fake server rotates env-token-1 -> rotated-1, and TokenManager
+    // persists the replacement before resolving.
+    expect(hasRotated(CONFIG, { storePath })).toBe(true);
+  });
+
+  it('is false while the stored token still equals the configured one', () => {
+    // Seed a store whose refresh token is the configured one, mutating a REAL
+    // record so the salted `boundTo` binding still verifies.
+    const seed = fakeTokenServer();
+    return createTokenManager(CONFIG, { storePath, fetchImpl: seed.fetchImpl })
+      .getAccessToken()
+      .then(() => {
+        const raw = JSON.parse(readFileSync(storePath, 'utf8')) as {
+          state: { refreshToken: string };
+        };
+        raw.state.refreshToken = CONFIG.refreshToken;
+        writeFileSync(storePath, JSON.stringify(raw), { mode: 0o600 });
+        expect(hasRotated(CONFIG, { storePath })).toBe(false);
+      });
+  });
+
+  it('never returns the token itself', async () => {
+    const first = fakeTokenServer();
+    await createTokenManager(CONFIG, { storePath, fetchImpl: first.fetchImpl }).getAccessToken();
+    expect(typeof hasRotated(CONFIG, { storePath })).toBe('boolean');
   });
 });
