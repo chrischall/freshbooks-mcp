@@ -1,6 +1,6 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, readOAuthConfig, type OAuthConfig } from './auth.js';
+import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -103,6 +103,35 @@ export class FreshbooksClient {
       this.configError = null;
       this.config = result.config;
     }
+  }
+
+  /**
+   * Which credential source is configured, for `freshbooks_healthcheck` — a
+   * LABEL and the non-secret facts, never the client secret or refresh token.
+   *
+   * Reports `configError` as the reason when nothing resolved, because that
+   * string already names exactly which of the three env vars are missing —
+   * which is the whole question a healthcheck is asked here.
+   */
+  describeCredential(): { source: string | null; detail?: Record<string, unknown> } {
+    if (this.config === null) return { source: null };
+    // Real rotation state, read from the persisted store — NOT inferred from
+    // whether `tokenManager` happens to have been constructed, which only
+    // tracks "a request already ran in this process". `null` means nothing is
+    // persisted yet, which is "unknown" rather than "not rotated".
+    const rotated = hasRotated(this.config, this.storePath ? { storePath: this.storePath } : {});
+    return {
+      source: 'env',
+      detail: {
+        refresh_token:
+          rotated === null ? 'unknown (nothing persisted yet)' : rotated ? 'rotated' : 'as-configured',
+      },
+    };
+  }
+
+  /** The reason no credential resolved, for the healthcheck's message. */
+  get credentialError(): string | null {
+    return this.configError;
   }
 
   private requireConfig(): OAuthConfig {

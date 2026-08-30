@@ -55,6 +55,7 @@ adopted, so re-bootstrapping is the supported recovery path.
 | Tool | Purpose |
 | --- | --- |
 | `freshbooks_get_identity` | Resolve accountId / businessId / businessUuid |
+| `freshbooks_healthcheck` | Verify the OAuth credential and FreshBooks reachability; distinguishes "no credential" from "rejected" from "FreshBooks is down" |
 | `freshbooks_list_invoices` / `freshbooks_get_invoice` | Browse and fetch invoices |
 | `freshbooks_list_clients` / `freshbooks_get_client` | Browse and fetch clients |
 | `freshbooks_list_estimates` / `freshbooks_get_estimate` | Browse and fetch estimates |

@@ -202,6 +202,36 @@ function isBearerTokens(raw: unknown): raw is BearerTokens {
  *    throws, and the library wraps it so the failure can never be mistaken for
  *    a revoked credential and trigger a store-clearing recovery.
  */
+/**
+ * Whether the persisted refresh token differs from the CONFIGURED one — i.e.
+ * whether a rotation has actually happened, for `freshbooks_healthcheck`.
+ *
+ * Reads the same store `createTokenManager` does, so it reports the token that
+ * would really be used. Returns `null` when nothing is persisted yet: that is
+ * "not known", which is a different answer from "not rotated" and the
+ * healthcheck must not conflate them.
+ *
+ * Deliberately returns a BOOLEAN, never a token. An earlier version inferred
+ * this from whether the private `tokenManager` field had been lazily
+ * constructed, which only tracked "some authenticated request happened in this
+ * process" — always false on a fresh process's first call and true forever
+ * after, regardless of any rotation.
+ */
+export function hasRotated(
+  config: OAuthConfig,
+  opts: { storePath?: string } = {},
+): boolean | null {
+  const filePath = opts.storePath ?? defaultStorePath();
+  const store = createFileStatePersistence<BearerTokens>({
+    filePath,
+    boundTo: config.refreshToken,
+    validate: (raw) => (isBearerTokens(raw) ? raw : null),
+  });
+  const stored = store.load() ?? readLegacyStore(filePath, config.refreshToken);
+  if (!stored || !stored.refreshToken) return null;
+  return stored.refreshToken !== config.refreshToken;
+}
+
 export function createTokenManager(
   config: OAuthConfig,
   opts: { storePath?: string; fetchImpl?: typeof fetch } = {},
