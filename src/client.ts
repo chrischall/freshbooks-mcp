@@ -1,6 +1,6 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, readOAuthConfig, type OAuthConfig } from './auth.js';
+import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -115,12 +115,16 @@ export class FreshbooksClient {
    */
   describeCredential(): { source: string | null; detail?: Record<string, unknown> } {
     if (this.config === null) return { source: null };
+    // Real rotation state, read from the persisted store — NOT inferred from
+    // whether `tokenManager` happens to have been constructed, which only
+    // tracks "a request already ran in this process". `null` means nothing is
+    // persisted yet, which is "unknown" rather than "not rotated".
+    const rotated = hasRotated(this.config, this.storePath ? { storePath: this.storePath } : {});
     return {
       source: 'env',
       detail: {
-        // A rotating refresh token means the LIVE one may differ from the
-        // configured one; say which is in play without revealing either.
-        refresh_token: this.tokenManager ? 'rotated-since-start' : 'as-configured',
+        refresh_token:
+          rotated === null ? 'unknown (nothing persisted yet)' : rotated ? 'rotated' : 'as-configured',
       },
     };
   }
