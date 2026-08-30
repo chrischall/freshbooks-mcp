@@ -105,6 +105,31 @@ export class FreshbooksClient {
     }
   }
 
+  /**
+   * Which credential source is configured, for `freshbooks_healthcheck` — a
+   * LABEL and the non-secret facts, never the client secret or refresh token.
+   *
+   * Reports `configError` as the reason when nothing resolved, because that
+   * string already names exactly which of the three env vars are missing —
+   * which is the whole question a healthcheck is asked here.
+   */
+  describeCredential(): { source: string | null; detail?: Record<string, unknown> } {
+    if (this.config === null) return { source: null };
+    return {
+      source: 'env',
+      detail: {
+        // A rotating refresh token means the LIVE one may differ from the
+        // configured one; say which is in play without revealing either.
+        refresh_token: this.tokenManager ? 'rotated-since-start' : 'as-configured',
+      },
+    };
+  }
+
+  /** The reason no credential resolved, for the healthcheck's message. */
+  get credentialError(): string | null {
+    return this.configError;
+  }
+
   private requireConfig(): OAuthConfig {
     if (this.config === null) {
       throw new McpToolError(this.configError ?? 'FreshBooks is not configured.', {
