@@ -5,7 +5,7 @@
 
 ### Features
 
-* **auth:** mint the refresh token from tools, not a bootstrap script ([#28](https://github.com/chrischall/freshbooks-mcp/issues/28)) ([9bda31a](https://github.com/chrischall/freshbooks-mcp/commit/9bda31a2dc0851c8e0ce75ebb7256e34799ee912)), closes [#29](https://github.com/chrischall/freshbooks-mcp/issues/29)
+* **auth:** mint the refresh token from tools, not a bootstrap script (thanks @{"message":"Not Found","documentation_url":"https://docs.github.com/rest/pulls/pulls#get-a-pull-request","status":"404"}) ([#28](https://github.com/chrischall/freshbooks-mcp/issues/28)) ([9bda31a](https://github.com/chrischall/freshbooks-mcp/commit/9bda31a2dc0851c8e0ce75ebb7256e34799ee912)), closes [#29](https://github.com/chrischall/freshbooks-mcp/issues/29)
 
 ## [0.4.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.3.1...v0.4.0) (2026-08-30)
 
