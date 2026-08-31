@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.3.1...v0.4.0) (2026-08-30)
+
+
+### Features
+
+* add freshbooks_healthcheck ([#20](https://github.com/chrischall/freshbooks-mcp/issues/20)) ([741e631](https://github.com/chrischall/freshbooks-mcp/commit/741e6314972baa285a7c2fa6ebd72798ae86c288))
+
 ## [0.3.1](https://github.com/chrischall/freshbooks-mcp/compare/v0.3.0...v0.3.1) (2026-08-26)
 
 
