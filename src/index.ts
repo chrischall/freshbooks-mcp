@@ -2,6 +2,7 @@
 import { runMcp } from '@chrischall/mcp-utils';
 import { FreshbooksClient } from './client.js';
 import { registerAccountTools } from './tools/account.js';
+import { registerAuthTools } from './tools/auth.js';
 import { registerHealthcheckTools } from './tools/healthcheck.js';
 import { registerEstimateTools } from './tools/estimates.js';
 import { registerExpenseTools } from './tools/expenses.js';
@@ -21,6 +22,7 @@ await runMcp({
   banner: '[freshbooks-mcp] This project was developed and is maintained by AI. Use at your own discretion.',
   deps: client,
   tools: [
+    registerAuthTools,
     registerAccountTools,
     registerHealthcheckTools,
     registerInvoicingTools,
