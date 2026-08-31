@@ -57,8 +57,13 @@ describe('no site restates the recovery advice', () => {
         const p = join(d, e);
         return statSync(p).isDirectory() ? walk(p) : p.endsWith('.ts') ? [p] : [];
       });
+    // Exactly src/auth.ts, matched on the full path. `endsWith('auth.ts')`
+    // reads the same but also exempts src/tools/auth.ts — the file most
+    // likely to grow a fifth copy of this advice, so the blind spot sat
+    // precisely where the guard was needed.
+    const definition = join(root, 'auth.ts');
     const offenders = walk(root).filter((f) => {
-      if (f.endsWith(`${'auth'}.ts`)) return false; // the definition lives here
+      if (f === definition) return false; // the definition lives here
       const src = readFileSync(f, 'utf8');
       return /re-run the OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b/i.test(src);
     });
