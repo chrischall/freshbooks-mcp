@@ -42,3 +42,26 @@ describe('recoveryHint', () => {
     expect(recoveryHint()).toMatch(/single-use|rotate/i);
   });
 });
+
+// Four sites carried this advice and I fixed three; the healthcheck's own hint
+// was the one left behind — and it is the worst one to miss, since a
+// healthcheck exists to tell someone what to do. Nothing structural stopped a
+// fifth copy appearing, so this does.
+describe('no site restates the recovery advice', () => {
+  it('only auth.ts defines it; everywhere else calls recoveryHint()', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const root = join(__dirname, '..', 'src');
+    const walk = (d: string): string[] =>
+      readdirSync(d).flatMap((e) => {
+        const p = join(d, e);
+        return statSync(p).isDirectory() ? walk(p) : p.endsWith('.ts') ? [p] : [];
+      });
+    const offenders = walk(root).filter((f) => {
+      if (f.endsWith(`${'auth'}.ts`)) return false; // the definition lives here
+      const src = readFileSync(f, 'utf8');
+      return /re-run the OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b/i.test(src);
+    });
+    expect(offenders, 'these restate recovery advice instead of calling recoveryHint()').toEqual([]);
+  });
+});

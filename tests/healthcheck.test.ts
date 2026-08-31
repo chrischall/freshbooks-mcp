@@ -71,6 +71,10 @@ describe('freshbooks_healthcheck', () => {
     );
     expect(r.error?.kind).toBe('credential_rejected');
     expect(r.hint).toMatch(/rotate/i);
+    // /rotate/i alone passed while this hint still carried local-only advice.
+    // A healthcheck exists to tell someone what to DO, so assert the recovery
+    // it names rather than merely that it mentions rotation.
+    expect(r.hint, 'must defer to recoveryHint(), not restate it').toMatch(/reconnect|freshbooks_auth_url/i);
   });
 
   it('keeps a FreshBooks-side error distinct from a rejection', async () => {
