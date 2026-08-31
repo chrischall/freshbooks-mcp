@@ -83,6 +83,8 @@ interface AccountingEnvelope {
 
 export class FreshbooksClient {
   private readonly configError: string | null;
+  /** The advice `readOAuthConfig` chose for that error — never re-derived. */
+  private readonly configAdvice: string | null;
   private readonly config: OAuthConfig | null;
   private tokenManager: TokenManager | null = null;
   private identityCache: Identity | null = null;
@@ -98,9 +100,11 @@ export class FreshbooksClient {
     const result = readOAuthConfig();
     if ('error' in result) {
       this.configError = result.error;
+      this.configAdvice = result.advice;
       this.config = null;
     } else {
       this.configError = null;
+      this.configAdvice = null;
       this.config = result.config;
     }
   }
@@ -136,24 +140,18 @@ export class FreshbooksClient {
 
   private requireConfig(): OAuthConfig {
     if (this.config === null) {
-      // An ABSENT credential needs the SAME environment-aware advice as a
-      // rejected one. It used to get "Set FRESHBOOKS_CLIENT_ID,
-      // FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN" — impossible on
-      // a hosted registration, where there is no shell to export into and the
-      // value arrives from a principal secret. A connector authorized before
-      // the connect flow existed lands here with no token at all, so this is
-      // the message a person actually meets first.
+      // The message and this hint are two halves of one answer, so they must
+      // never disagree. `readOAuthConfig` already decided which advice fits —
+      // reconnect, or "the app credentials are the operator's" — so take it
+      // rather than re-deriving it here.
       //
-      // Only the TOKEN is recoverable by the person: the app credentials are
-      // the operator's, so a missing one of those keeps a config-shaped hint
-      // rather than telling someone to reconnect over a problem reconnecting
-      // cannot fix.
-      const missingToken = /FRESHBOOKS_REFRESH_TOKEN/.test(this.configError ?? '');
+      // This used to regex-match the rendered message for
+      // FRESHBOOKS_REFRESH_TOKEN, which is true whenever the token is merely
+      // NAMED among the missing vars. With an app credential missing too, the
+      // message said "reconnecting cannot supply them" while the hint said
+      // "Reconnect this connector" — the loop this was meant to close.
       throw new McpToolError(this.configError ?? 'FreshBooks is not configured.', {
-        hint: missingToken
-          ? recoveryHint()
-          : 'FRESHBOOKS_CLIENT_ID and FRESHBOOKS_CLIENT_SECRET identify the FreshBooks app ' +
-            'itself; on a hosted registration they are the operator\'s to set, not yours.',
+        hint: this.configAdvice ?? undefined,
       });
     }
     return this.config;

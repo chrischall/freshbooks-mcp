@@ -191,6 +191,22 @@ describe('an ABSENT credential gets advice keyed on WHICH one is missing', () =>
     expect(text).toMatch(/operates it|theirs to fix/i);
   });
 
+  // The message and the hint are two halves of one answer, so they must never
+  // disagree. They did: `requireConfig` decided which advice to attach by
+  // regex-matching the RENDERED message for FRESHBOOKS_REFRESH_TOKEN, which is
+  // true whenever the token is merely NAMED among the missing vars. With an
+  // app credential missing too, the message said "reconnecting cannot supply
+  // them" while the hint said "Reconnect this connector" — reopening the exact
+  // loop this branch exists to close.
+  it('never contradicts itself when BOTH an app credential and the token are missing', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    const text = await configError();
+    expect(text).toMatch(/FRESHBOOKS_CLIENT_ID/);
+    expect(text).toMatch(/reconnecting cannot supply them/i);
+    // The contradiction, stated as the assertion: the imperative must be absent.
+    expect(text).not.toMatch(/reconnect this connector/i);
+  });
+
   it('sends a LOCAL user to register an app when the APP credential is missing', async () => {
     process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
     const text = await configError();
