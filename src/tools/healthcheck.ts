@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerCredentialHealthcheckTool } from '@chrischall/mcp-utils/healthcheck';
+import { recoveryHint } from '../auth.js';
 import type { FreshbooksClient } from '../client.js';
 
 /**
@@ -34,8 +35,15 @@ export function registerHealthcheckTools(server: McpServer, client: FreshbooksCl
     },
     probeFn: () => client.getIdentity(),
     hints: {
+      // The recovery text comes from `recoveryHint()`, NOT a fourth copy: it is
+      // the only place that knows whether this is a hosted registration, where
+      // "set FRESHBOOKS_REFRESH_TOKEN yourself" is impossible rather than
+      // merely awkward. A healthcheck exists to tell someone what to do, so it
+      // is the worst of the four sites to leave with local-only advice.
       credential_rejected:
-        'FreshBooks rejected the credential. Refresh tokens ROTATE — each refresh spends the old one — so this usually means the stored token was superseded or the persisted copy was lost. Re-run the OAuth bootstrap to mint a fresh FRESHBOOKS_REFRESH_TOKEN.',
+        'FreshBooks rejected the credential. Refresh tokens ROTATE — each refresh spends the old ' +
+        'one — so this usually means the stored token was superseded or the persisted copy was ' +
+        'lost. ' + recoveryHint(),
     },
   });
 }

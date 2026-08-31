@@ -240,6 +240,38 @@ export async function exchangeAuthorizationCode(
   return parsed as TokenResponse;
 }
 
+/**
+ * What to do when the refresh token is spent — and it differs by where this is
+ * running, which the old single message got wrong.
+ *
+ * A hosted registration has no shell to export into and no server to restart,
+ * and the value the child receives comes from a principal secret the person
+ * cannot edit from a chat. Telling them to "update FRESHBOOKS_REFRESH_TOKEN"
+ * there costs a manual bootstrap whose result has nowhere to go — which is
+ * exactly the detour it caused before this existed.
+ *
+ * `MCP_DATA_DIR` is the signal: mcp-host sets it (alongside HOME) for a
+ * registration with `dataDir`, and nothing local does.
+ */
+export function recoveryHint(): string {
+  const shared =
+    'FreshBooks refresh tokens are single-use and rotate on every refresh, so a spent ' +
+    'or lost token cannot be recovered — a new one has to be minted. ';
+  if (readEnvVar('MCP_DATA_DIR')) {
+    return (
+      shared +
+      'Reconnect this connector: the connect flow opens the FreshBooks consent page, takes the ' +
+      'URL you land on, and stores the new token for you. Do not try to set ' +
+      'FRESHBOOKS_REFRESH_TOKEN yourself — the connector supplies it.'
+    );
+  }
+  return (
+    shared +
+    'Call freshbooks_auth_url, approve in the browser, then pass the URL you land on to ' +
+    'freshbooks_auth_exchange, and set the FRESHBOOKS_REFRESH_TOKEN it returns.'
+  );
+}
+
 export async function exchangeRefreshToken(
   config: OAuthConfig,
   refreshToken: string,
@@ -275,10 +307,7 @@ export async function exchangeRefreshToken(
     // explicitly rather than surfacing a bare `invalid_grant`.
     const detail = parsed.error_description ?? parsed.error ?? `HTTP ${res.status}`;
     throw new McpToolError(`FreshBooks refused the refresh token: ${detail}`, {
-      hint:
-        'FreshBooks refresh tokens are single-use and rotate on every refresh. If this token was ' +
-        'already spent (or the stored copy was lost), it cannot be recovered — re-run the OAuth ' +
-        'bootstrap to obtain a new one and update FRESHBOOKS_REFRESH_TOKEN.',
+      hint: recoveryHint(),
     });
   }
   return parsed as TokenResponse;
@@ -421,9 +450,12 @@ export function createTokenManager(
     onPersistError: (err) => {
       const detail = err instanceof Error ? err.message : String(err);
       throw new McpToolError(`Refreshed the FreshBooks token but could not persist it: ${detail}`, {
+        // The persist failure is the actionable half — fix the store — but the
+        // recovery once the token IS lost differs by environment, so defer to
+        // the shared hint rather than restating the local-dev one.
         hint:
           'The previous refresh token is now spent, so losing the new one locks the account out. ' +
-          'Fix the token store path/permissions and re-run the OAuth bootstrap.',
+          'Fix the token store path/permissions first. ' + recoveryHint(),
       });
     },
   });
