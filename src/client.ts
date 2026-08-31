@@ -1,6 +1,6 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig, recoveryHint } from './auth.js';
+import { createTokenManager, hasRotated, ownerSetHint, readOAuthConfig, recoveryHint, type OAuthConfig } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -315,8 +315,8 @@ export class FreshbooksClient {
         'Could not resolve a FreshBooks account from /auth/api/v1/users/me — no business membership was returned.',
         {
           hint:
-            'The authenticated identity may not belong to any business yet. Set FRESHBOOKS_ACCOUNT_ID ' +
-            'explicitly if you know it.',
+            'The authenticated identity may not belong to any business yet. ' +
+            ownerSetHint('FRESHBOOKS_ACCOUNT_ID'),
         },
       );
     }

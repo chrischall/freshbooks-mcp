@@ -279,6 +279,27 @@ export function recoveryHint(): string {
   );
 }
 
+/**
+ * Advice for a variable the connector's OWNER sets on the registration, as
+ * distinct from a credential the caller can recover.
+ *
+ * It lives here beside `recoveryHint()` for the same reason that one does:
+ * this file is the single place that knows whether it is running hosted, and a
+ * second copy of that test is how the advice drifts. But it is deliberately
+ * NOT `recoveryHint()` — reconnecting mints a credential and cannot conjure a
+ * business membership, so sending someone round the connect flow over this
+ * would be a loop.
+ */
+export function ownerSetHint(name: string): string {
+  if (readEnvVar('MCP_DATA_DIR')) {
+    return (
+      `${name} is set on the registration by whoever owns this connector — not from a chat, ` +
+      'and not by you. Ask them to add it.'
+    );
+  }
+  return `Set ${name} explicitly if you know it.`;
+}
+
 export async function exchangeRefreshToken(
   config: OAuthConfig,
   refreshToken: string,

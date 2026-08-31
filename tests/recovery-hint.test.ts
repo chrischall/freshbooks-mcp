@@ -81,11 +81,13 @@ describe('no site restates the recovery advice', () => {
       // The lookbehind spares the CORRECT hosted line, which has to be allowed
       // to say "do not try to set FRESHBOOKS_REFRESH_TOKEN yourself".
       //
-      // Scoped to the three CREDENTIAL variables on purpose.
-      // FRESHBOOKS_ACCOUNT_ID is an owner-set override for an identity with no
-      // business membership, not a credential a caller recovers — a different
-      // question from the one this guard asks.
-      return /re-run the OAuth bootstrap|one-time OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b|(?<!do not try to )\bset (the )?FRESHBOOKS_(REFRESH_TOKEN|CLIENT_ID|CLIENT_SECRET)/i.test(
+      // FRESHBOOKS_ACCOUNT_ID is here for a different reason from the three
+      // credentials: it is an owner-set override for an identity with no
+      // business membership, so its advice comes from `ownerSetHint()` rather
+      // than `recoveryHint()` — reconnecting cannot conjure a business
+      // membership. Both live in auth.ts, which this walk skips, so any copy
+      // of either phrasing outside it is the drift being guarded against.
+      return /re-run the OAuth bootstrap|one-time OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b|(?<!do not try to )\bset (the )?FRESHBOOKS_(REFRESH_TOKEN|CLIENT_ID|CLIENT_SECRET|ACCOUNT_ID)/i.test(
         src,
       );
     });
