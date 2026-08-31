@@ -1,6 +1,6 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig, recoveryHint } from './auth.js';
+import { createTokenManager, hasRotated, ownerSetHint, readOAuthConfig, recoveryHint, type OAuthConfig } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -83,6 +83,8 @@ interface AccountingEnvelope {
 
 export class FreshbooksClient {
   private readonly configError: string | null;
+  /** The advice `readOAuthConfig` chose for that error — never re-derived. */
+  private readonly configAdvice: string | null;
   private readonly config: OAuthConfig | null;
   private tokenManager: TokenManager | null = null;
   private identityCache: Identity | null = null;
@@ -98,9 +100,11 @@ export class FreshbooksClient {
     const result = readOAuthConfig();
     if ('error' in result) {
       this.configError = result.error;
+      this.configAdvice = result.advice;
       this.config = null;
     } else {
       this.configError = null;
+      this.configAdvice = null;
       this.config = result.config;
     }
   }
@@ -136,8 +140,18 @@ export class FreshbooksClient {
 
   private requireConfig(): OAuthConfig {
     if (this.config === null) {
+      // The message and this hint are two halves of one answer, so they must
+      // never disagree. `readOAuthConfig` already decided which advice fits —
+      // reconnect, or "the app credentials are the operator's" — so take it
+      // rather than re-deriving it here.
+      //
+      // This used to regex-match the rendered message for
+      // FRESHBOOKS_REFRESH_TOKEN, which is true whenever the token is merely
+      // NAMED among the missing vars. With an app credential missing too, the
+      // message said "reconnecting cannot supply them" while the hint said
+      // "Reconnect this connector" — the loop this was meant to close.
       throw new McpToolError(this.configError ?? 'FreshBooks is not configured.', {
-        hint: 'Set FRESHBOOKS_CLIENT_ID, FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN.',
+        hint: this.configAdvice ?? undefined,
       });
     }
     return this.config;
@@ -299,8 +313,8 @@ export class FreshbooksClient {
         'Could not resolve a FreshBooks account from /auth/api/v1/users/me — no business membership was returned.',
         {
           hint:
-            'The authenticated identity may not belong to any business yet. Set FRESHBOOKS_ACCOUNT_ID ' +
-            'explicitly if you know it.',
+            'The authenticated identity may not belong to any business yet. ' +
+            ownerSetHint('FRESHBOOKS_ACCOUNT_ID'),
         },
       );
     }

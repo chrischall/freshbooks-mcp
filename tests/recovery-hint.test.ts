@@ -64,9 +64,153 @@ describe('no site restates the recovery advice', () => {
     const definition = join(root, 'auth.ts');
     const offenders = walk(root).filter((f) => {
       if (f === definition) return false; // the definition lives here
-      const src = readFileSync(f, 'utf8');
-      return /re-run the OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b/i.test(src);
+      // Judge CODE, not commentary. A comment that QUOTES the bad advice in
+      // order to explain what it prevents is not committing it — and once the
+      // guard widened, those comments were the only thing it caught. Whole-line
+      // comments only, so a `https://…` inside a string is never mistaken for
+      // one.
+      const src = readFileSync(f, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+        .join('\n');
+      // Widened after the ABSENT-credential path shipped local-only advice
+      // that the narrower pattern could not see: "Set FRESHBOOKS_CLIENT_ID,
+      // FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN" and "run the
+      // one-time OAuth bootstrap" are the same mistake in different words.
+      // The lookbehind spares the CORRECT hosted line, which has to be allowed
+      // to say "do not try to set FRESHBOOKS_REFRESH_TOKEN yourself".
+      //
+      // FRESHBOOKS_ACCOUNT_ID is here for a different reason from the three
+      // credentials: it is an owner-set override for an identity with no
+      // business membership, so its advice comes from `ownerSetHint()` rather
+      // than `recoveryHint()` — reconnecting cannot conjure a business
+      // membership. Both live in auth.ts, which this walk skips, so any copy
+      // of either phrasing outside it is the drift being guarded against.
+      return /re-run the OAuth bootstrap|one-time OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b|(?<!do not try to )\bset (the )?FRESHBOOKS_(REFRESH_TOKEN|CLIENT_ID|CLIENT_SECRET|ACCOUNT_ID)/i.test(
+        src,
+      );
     });
     expect(offenders, 'these restate recovery advice instead of calling recoveryHint()').toEqual([]);
+  });
+});
+
+// The ABSENT credential is a different path from the REJECTED one, and it was
+// the one still handing out local-only advice. A connector authorized before
+// the connect flow existed has no stored token at all, so its child starts
+// with FRESHBOOKS_REFRESH_TOKEN unset — and the reply told the person to set
+// an environment variable on a host they have no shell on. Observed live on
+// 2026-08-31: the hosted registration's own healthcheck said "the environment
+// variable FRESHBOOKS_REFRESH_TOKEN is still not set", and the only way it
+// offered out was impossible.
+describe('an ABSENT credential gets advice keyed on WHICH one is missing', () => {
+  // Every FRESHBOOKS_* var is cleared and restored, per the convention in
+  // oauth-code.test.ts. Not hygiene: `clientWith` in client.test.ts SETS
+  // FRESHBOOKS_REFRESH_TOKEN on process.env, so a block that only managed
+  // MCP_DATA_DIR could see a token it never set and pass for the wrong reason.
+  const VARS = [
+    'MCP_DATA_DIR',
+    'FRESHBOOKS_CLIENT_ID',
+    'FRESHBOOKS_CLIENT_SECRET',
+    'FRESHBOOKS_REFRESH_TOKEN',
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of VARS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    for (const k of VARS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  /**
+   * The config is read in the CONSTRUCTOR, so the environment has to be set
+   * before the client is built. (An earlier version passed credentials as
+   * constructor options, which the constructor does not accept — it takes
+   * `{fetchImpl, storePath}` — so those values were silently ignored and the
+   * test only worked by accident of the ambient environment.)
+   */
+  async function configError(): Promise<string> {
+    const { FreshbooksClient } = await import('../src/client.js');
+    const c = new FreshbooksClient({ storePath: '/tmp/fb-absent-test.json' });
+    try {
+      await c.getIdentity();
+      throw new Error('expected the call to fail with no credential');
+    } catch (e) {
+      const err = e as { message?: string; hint?: string; data?: { hint?: string } };
+      return [err.message, err.hint, err.data?.hint].filter(Boolean).join(' ');
+    }
+  }
+
+  /** App credentials present, token absent — the case a person actually hits. */
+  async function missingTokenError(): Promise<string> {
+    process.env.FRESHBOOKS_CLIENT_ID = 'cid';
+    process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
+    return configError();
+  }
+
+  it('tells a HOSTED user to reconnect, and never to set the variable', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    const text = await missingTokenError();
+    expect(text).toMatch(/reconnect/i);
+    // The two impossible instructions this used to give: "Set
+    // FRESHBOOKS_CLIENT_ID, FRESHBOOKS_CLIENT_SECRET and
+    // FRESHBOOKS_REFRESH_TOKEN" (no shell), and "register an app, then run the
+    // one-time OAuth bootstrap" (the app is the operator's).
+    //
+    // Matched with a lookbehind so the CORRECT hosted line — "Do not try to
+    // set FRESHBOOKS_REFRESH_TOKEN yourself" — is not itself flagged. A blunt
+    // /set FRESHBOOKS_/ fails on the fixed text, which is how this assertion
+    // was first written and why it is spelled out here.
+    expect(text).not.toMatch(/(?<!do not try to )\bset (the )?FRESHBOOKS_[A-Z_]+/i);
+    expect(text).not.toMatch(/register an app|one-time OAuth bootstrap/i);
+  });
+
+  it('still tells a LOCAL user how to mint one', async () => {
+    const text = await missingTokenError();
+    expect(text).toMatch(/freshbooks_auth_url/);
+  });
+
+  // The environment is not the only axis. Reconnecting mints a TOKEN, so
+  // answering a missing APP credential with "reconnect this connector" sends
+  // someone through a flow that runs and changes nothing.
+  it('does NOT tell a hosted user to reconnect when the APP credential is what is missing', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
+    const text = await configError();
+    expect(text).toMatch(/FRESHBOOKS_CLIENT_ID/);
+    // The IMPERATIVE, not the word: the correct text here says "reconnecting
+    // cannot supply them", so a bare /reconnect/i flags the fix itself. Same
+    // trap as the `set FRESHBOOKS_` assertion above.
+    expect(text).not.toMatch(/reconnect this connector/i);
+    expect(text).toMatch(/operates it|theirs to fix/i);
+  });
+
+  // The message and the hint are two halves of one answer, so they must never
+  // disagree. They did: `requireConfig` decided which advice to attach by
+  // regex-matching the RENDERED message for FRESHBOOKS_REFRESH_TOKEN, which is
+  // true whenever the token is merely NAMED among the missing vars. With an
+  // app credential missing too, the message said "reconnecting cannot supply
+  // them" while the hint said "Reconnect this connector" — reopening the exact
+  // loop this branch exists to close.
+  it('never contradicts itself when BOTH an app credential and the token are missing', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    const text = await configError();
+    expect(text).toMatch(/FRESHBOOKS_CLIENT_ID/);
+    expect(text).toMatch(/reconnecting cannot supply them/i);
+    // The contradiction, stated as the assertion: the imperative must be absent.
+    expect(text).not.toMatch(/reconnect this connector/i);
+  });
+
+  it('sends a LOCAL user to register an app when the APP credential is missing', async () => {
+    process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
+    const text = await configError();
+    expect(text).toMatch(/register an app/i);
+    expect(text).not.toMatch(/reconnect this connector/i);
   });
 });

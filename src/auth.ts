@@ -85,7 +85,7 @@ export function readBootstrapConfig(): { config: OAuthConfig } | { error: string
 }
 
 /** Read OAuth config, or return the reason it is unusable (deferred-config-error pattern). */
-export function readOAuthConfig(): { config: OAuthConfig } | { error: string } {
+export function readOAuthConfig(): { config: OAuthConfig } | { error: string; advice: string } {
   const clientId = readEnvVar('FRESHBOOKS_CLIENT_ID');
   const clientSecret = readEnvVar('FRESHBOOKS_CLIENT_SECRET');
   const refreshToken = readEnvVar('FRESHBOOKS_REFRESH_TOKEN');
@@ -96,12 +96,36 @@ export function readOAuthConfig(): { config: OAuthConfig } | { error: string } {
   ].filter((m): m is string => m !== null);
 
   if (missing.length > 0) {
+    // WHICH credential is missing decides the advice, not just the
+    // environment. `recoveryHint()` says "reconnect" when hosted, and
+    // reconnecting mints a TOKEN — it cannot supply an app credential. So
+    // routing every missing variable through it would answer a missing
+    // client id with a connect flow that runs and changes nothing.
+    //
+    // App credential missing: the operator's to fix, in both environments.
+    // Token missing (app credentials present): `recoveryHint()` already
+    // branches correctly — reconnect when hosted, the auth tools locally.
+    const advice =
+      clientId && clientSecret
+        ? recoveryHint()
+        : readEnvVar('MCP_DATA_DIR')
+          ? 'FRESHBOOKS_CLIENT_ID and FRESHBOOKS_CLIENT_SECRET identify the FreshBooks app ' +
+            'itself. On a hosted registration they belong to whoever operates it, so this is ' +
+            'theirs to fix — reconnecting cannot supply them.'
+          : 'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be ' +
+            'HTTPS with no query string, e.g. https://localhost) and set its credentials.';
     return {
       error:
         `FreshBooks is not configured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset. ` +
-        'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be HTTPS with no ' +
-        'query string, e.g. https://localhost), then run the one-time OAuth bootstrap to obtain ' +
-        'a refresh token.',
+        advice,
+      // Returned SEPARATELY so a caller can attach it as a hint WITHOUT
+      // re-deriving which case this is. `requireConfig` used to decide that by
+      // regex-matching the rendered message for FRESHBOOKS_REFRESH_TOKEN —
+      // true whenever the token is merely NAMED among the missing vars — so
+      // with an app credential missing too, the message said "reconnecting
+      // cannot supply them" while the hint said "Reconnect this connector".
+      // One decision, made here, cannot contradict itself.
+      advice,
     };
   }
   return {
@@ -270,6 +294,27 @@ export function recoveryHint(): string {
     'Call freshbooks_auth_url, approve in the browser, then pass the URL you land on to ' +
     'freshbooks_auth_exchange, and set the FRESHBOOKS_REFRESH_TOKEN it returns.'
   );
+}
+
+/**
+ * Advice for a variable the connector's OWNER sets on the registration, as
+ * distinct from a credential the caller can recover.
+ *
+ * It lives here beside `recoveryHint()` for the same reason that one does:
+ * this file is the single place that knows whether it is running hosted, and a
+ * second copy of that test is how the advice drifts. But it is deliberately
+ * NOT `recoveryHint()` — reconnecting mints a credential and cannot conjure a
+ * business membership, so sending someone round the connect flow over this
+ * would be a loop.
+ */
+export function ownerSetHint(name: string): string {
+  if (readEnvVar('MCP_DATA_DIR')) {
+    return (
+      `${name} is set on the registration by whoever owns this connector — not from a chat, ` +
+      'and not by you. Ask them to add it.'
+    );
+  }
+  return `Set ${name} explicitly if you know it.`;
 }
 
 export async function exchangeRefreshToken(

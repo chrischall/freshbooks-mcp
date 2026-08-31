@@ -1,6 +1,6 @@
 // FreshBooks uses four different error envelopes across its six URL families, so a
 // single generic parser is wrong for most of them. These pin each documented shape.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { extractErrorMessage, FreshbooksClient } from '../src/client.js';
 
 describe('extractErrorMessage', () => {
@@ -440,5 +440,50 @@ describe('auto-review findings (PR #2)', () => {
     expect(call).toContain('taxes/taxes/');
     expect(call).not.toContain('../');
     expect(call).toContain('%2F');
+  });
+});
+
+// FRESHBOOKS_ACCOUNT_ID is not a credential the caller recovers — it is an
+// override the connector's OWNER sets on the registration, for the unusual
+// identity that belongs to no business. So the advice needs the same
+// environment split as the credential advice, for the same reason: on a hosted
+// registration "Set FRESHBOOKS_ACCOUNT_ID" names something the reader has no
+// way to do, and there is a person who can.
+describe('the no-business hint is environment-aware', () => {
+  const saved = process.env.MCP_DATA_DIR;
+  beforeEach(() => delete process.env.MCP_DATA_DIR);
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MCP_DATA_DIR;
+    else process.env.MCP_DATA_DIR = saved;
+  });
+
+  /** An identity that resolves to no account and no business. */
+  async function noBusinessHint(): Promise<string> {
+    const client = clientWith(
+      () =>
+        new Response(JSON.stringify({ response: { business_memberships: [], roles: [] } }), {
+          status: 200,
+        }),
+      `/tmp/fb-nobiz-${Math.random().toString(16).slice(2)}.json`,
+    );
+    try {
+      await client.getIdentity();
+      throw new Error('expected getIdentity to fail with no business membership');
+    } catch (e) {
+      const err = e as { message?: string; hint?: string; data?: { hint?: string } };
+      return [err.message, err.hint, err.data?.hint].filter(Boolean).join(' ');
+    }
+  }
+
+  it('points a HOSTED caller at the owner rather than at a shell', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    const text = await noBusinessHint();
+    expect(text).toMatch(/owner|owns this connector/i);
+    expect(text).not.toMatch(/\bset FRESHBOOKS_ACCOUNT_ID/i);
+  });
+
+  it('still tells a LOCAL caller to set it', async () => {
+    const text = await noBusinessHint();
+    expect(text).toMatch(/\bset FRESHBOOKS_ACCOUNT_ID/i);
   });
 });
