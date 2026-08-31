@@ -99,9 +99,16 @@ export function readOAuthConfig(): { config: OAuthConfig } | { error: string } {
     return {
       error:
         `FreshBooks is not configured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset. ` +
-        'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be HTTPS with no ' +
-        'query string, e.g. https://localhost), then run the one-time OAuth bootstrap to obtain ' +
-        'a refresh token.',
+        // Registering an app and running a bootstrap is what a LOCAL operator
+        // does. On a hosted registration neither is possible — the app is the
+        // operator's and there is no shell — so send the reader to the one
+        // route that exists there. `recoveryHint` is the single place that
+        // knows which environment this is; don't grow a copy here.
+        (readEnvVar('MCP_DATA_DIR')
+          ? recoveryHint()
+          : 'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be HTTPS ' +
+            'with no query string, e.g. https://localhost), then run the one-time OAuth bootstrap ' +
+            'to obtain a refresh token.'),
     };
   }
   return {

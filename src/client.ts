@@ -136,8 +136,24 @@ export class FreshbooksClient {
 
   private requireConfig(): OAuthConfig {
     if (this.config === null) {
+      // An ABSENT credential needs the SAME environment-aware advice as a
+      // rejected one. It used to get "Set FRESHBOOKS_CLIENT_ID,
+      // FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN" — impossible on
+      // a hosted registration, where there is no shell to export into and the
+      // value arrives from a principal secret. A connector authorized before
+      // the connect flow existed lands here with no token at all, so this is
+      // the message a person actually meets first.
+      //
+      // Only the TOKEN is recoverable by the person: the app credentials are
+      // the operator's, so a missing one of those keeps a config-shaped hint
+      // rather than telling someone to reconnect over a problem reconnecting
+      // cannot fix.
+      const missingToken = /FRESHBOOKS_REFRESH_TOKEN/.test(this.configError ?? '');
       throw new McpToolError(this.configError ?? 'FreshBooks is not configured.', {
-        hint: 'Set FRESHBOOKS_CLIENT_ID, FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN.',
+        hint: missingToken
+          ? recoveryHint()
+          : 'FRESHBOOKS_CLIENT_ID and FRESHBOOKS_CLIENT_SECRET identify the FreshBooks app ' +
+            'itself; on a hosted registration they are the operator\'s to set, not yours.',
       });
     }
     return this.config;

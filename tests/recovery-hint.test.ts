@@ -64,9 +64,86 @@ describe('no site restates the recovery advice', () => {
     const definition = join(root, 'auth.ts');
     const offenders = walk(root).filter((f) => {
       if (f === definition) return false; // the definition lives here
-      const src = readFileSync(f, 'utf8');
-      return /re-run the OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b/i.test(src);
+      // Judge CODE, not commentary. A comment that QUOTES the bad advice in
+      // order to explain what it prevents is not committing it — and once the
+      // guard widened, those comments were the only thing it caught. Whole-line
+      // comments only, so a `https://…` inside a string is never mistaken for
+      // one.
+      const src = readFileSync(f, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+        .join('\n');
+      // Widened after the ABSENT-credential path shipped local-only advice
+      // that the narrower pattern could not see: "Set FRESHBOOKS_CLIENT_ID,
+      // FRESHBOOKS_CLIENT_SECRET and FRESHBOOKS_REFRESH_TOKEN" and "run the
+      // one-time OAuth bootstrap" are the same mistake in different words.
+      // The lookbehind spares the CORRECT hosted line, which has to be allowed
+      // to say "do not try to set FRESHBOOKS_REFRESH_TOKEN yourself".
+      //
+      // Scoped to the three CREDENTIAL variables on purpose.
+      // FRESHBOOKS_ACCOUNT_ID is an owner-set override for an identity with no
+      // business membership, not a credential a caller recovers — a different
+      // question from the one this guard asks.
+      return /re-run the OAuth bootstrap|one-time OAuth bootstrap|update FRESHBOOKS_REFRESH_TOKEN\b|(?<!do not try to )\bset (the )?FRESHBOOKS_(REFRESH_TOKEN|CLIENT_ID|CLIENT_SECRET)/i.test(
+        src,
+      );
     });
     expect(offenders, 'these restate recovery advice instead of calling recoveryHint()').toEqual([]);
+  });
+});
+
+// The ABSENT credential is a different path from the REJECTED one, and it was
+// the one still handing out local-only advice. A connector authorized before
+// the connect flow existed has no stored token at all, so its child starts
+// with FRESHBOOKS_REFRESH_TOKEN unset — and the reply told the person to set
+// an environment variable on a host they have no shell on. Observed live on
+// 2026-08-31: the hosted registration's own healthcheck said "the environment
+// variable FRESHBOOKS_REFRESH_TOKEN is still not set", and the only way it
+// offered out was impossible.
+describe('an ABSENT credential gets the same environment-aware advice as a rejected one', () => {
+  const saved = process.env.MCP_DATA_DIR;
+  beforeEach(() => delete process.env.MCP_DATA_DIR);
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MCP_DATA_DIR;
+    else process.env.MCP_DATA_DIR = saved;
+  });
+
+  async function missingTokenError(): Promise<string> {
+    const { FreshbooksClient } = await import('../src/client.js');
+    const c = new FreshbooksClient({
+      clientId: 'id',
+      clientSecret: 'secret',
+      refreshToken: '',
+    } as never);
+    try {
+      await c.getIdentity();
+      throw new Error('expected the call to fail with no refresh token');
+    } catch (e) {
+      const err = e as { message?: string; hint?: string; data?: { hint?: string } };
+      return [err.message, err.hint, err.data?.hint].filter(Boolean).join(' ');
+    }
+  }
+
+  it('tells a HOSTED user to reconnect, and never to set the variable', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    const text = await missingTokenError();
+    expect(text).toMatch(/reconnect/i);
+    // The two impossible instructions this used to give: "Set
+    // FRESHBOOKS_CLIENT_ID, FRESHBOOKS_CLIENT_SECRET and
+    // FRESHBOOKS_REFRESH_TOKEN" (no shell), and "register an app, then run the
+    // one-time OAuth bootstrap" (the app is the operator's).
+    //
+    // Matched with a lookbehind so the CORRECT hosted line — "Do not try to
+    // set FRESHBOOKS_REFRESH_TOKEN yourself" — is not itself flagged. A blunt
+    // /set FRESHBOOKS_/ fails on the fixed text, which is how this assertion
+    // was first written and why it is spelled out here.
+    expect(text).not.toMatch(/(?<!do not try to )\bset (the )?FRESHBOOKS_[A-Z_]+/i);
+    expect(text).not.toMatch(/register an app|one-time OAuth bootstrap/i);
+  });
+
+  it('still tells a LOCAL user how to mint one', async () => {
+    const text = await missingTokenError();
+    expect(text).toMatch(/freshbooks_auth_url/);
   });
 });
