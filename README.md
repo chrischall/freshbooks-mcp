@@ -19,9 +19,15 @@ one-time browser authorization is required.
 1. Register an app at <https://my.freshbooks.com/#/developer>. The redirect URI must be
    **HTTPS with no query string**; `https://localhost` works and never needs to resolve.
 2. Note the **Client ID** and **Client Secret**.
-3. Run the one-time bootstrap to obtain a refresh token — see
-   [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md), which ships the
-   bootstrap script.
+3. Obtain a refresh token, either way:
+   - **From the server itself** (no script): set `FRESHBOOKS_CLIENT_ID` and
+     `FRESHBOOKS_CLIENT_SECRET`, start it, then call `freshbooks_auth_url`, open
+     the URL it returns, approve, and pass the URL you land on to
+     `freshbooks_auth_exchange`. Those two tools need no refresh token — minting
+     one is what they are for. This is also the path mcp-host's `authFlow`
+     drives, so a hosted connector can do it without you pasting anything.
+   - **From the script**, if you prefer it outside the server — see
+     [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md).
 4. Configure:
 
 ```sh

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { authorizeUrl, extractAuthorizationCode, exchangeAuthorizationCode } from '../src/auth.js';
 import type { OAuthConfig } from '../src/auth.js';
 
@@ -93,5 +93,55 @@ describe('exchangeAuthorizationCode', () => {
   it('fails when the response carries no refresh token', async () => {
     const { fetchImpl } = fakeToken(200, { access_token: 'at', expires_in: 1, created_at: 1 });
     await expect(exchangeAuthorizationCode(CONFIG, 'thecode', fetchImpl)).rejects.toThrow(/refresh/i);
+  });
+});
+
+// The finding that made the first version of these tools useless: they read
+// readOAuthConfig(), which demands FRESHBOOKS_REFRESH_TOKEN — the very thing
+// they exist to mint. A first-time user is ALWAYS in the state that blocked.
+describe('readBootstrapConfig', () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    for (const k of ['FRESHBOOKS_CLIENT_ID', 'FRESHBOOKS_CLIENT_SECRET', 'FRESHBOOKS_REFRESH_TOKEN', 'FRESHBOOKS_REDIRECT_URI']) delete process.env[k];
+  });
+  afterEach(() => {
+    for (const k of ['FRESHBOOKS_CLIENT_ID', 'FRESHBOOKS_CLIENT_SECRET', 'FRESHBOOKS_REFRESH_TOKEN', 'FRESHBOOKS_REDIRECT_URI']) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('succeeds with NO refresh token — the first-time case', async () => {
+    process.env.FRESHBOOKS_CLIENT_ID = 'cid';
+    process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
+    const { readBootstrapConfig } = await import('../src/auth.js');
+    const r = readBootstrapConfig();
+    expect('config' in r).toBe(true);
+    if ('config' in r) {
+      expect(r.config.clientId).toBe('cid');
+      expect(r.config.refreshToken).toBe('');
+    }
+  });
+
+  it('still refuses when the app credentials are missing, and says a token is not needed', async () => {
+    const { readBootstrapConfig } = await import('../src/auth.js');
+    const r = readBootstrapConfig();
+    expect('error' in r).toBe(true);
+    if ('error' in r) {
+      expect(r.error).toMatch(/FRESHBOOKS_CLIENT_ID/);
+      expect(r.error).not.toMatch(/FRESHBOOKS_REFRESH_TOKEN/);
+      expect(r.error).toMatch(/mint one/i);
+    }
+  });
+
+  it('defaults the redirect URI, and honours an override', async () => {
+    process.env.FRESHBOOKS_CLIENT_ID = 'cid';
+    process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
+    const { readBootstrapConfig } = await import('../src/auth.js');
+    const a = readBootstrapConfig();
+    expect('config' in a && a.config.redirectUri).toBe('https://localhost');
+    process.env.FRESHBOOKS_REDIRECT_URI = 'https://example.test/cb';
+    const b = readBootstrapConfig();
+    expect('config' in b && b.config.redirectUri).toBe('https://example.test/cb');
   });
 });

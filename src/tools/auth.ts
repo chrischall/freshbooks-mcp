@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { textResult } from '@chrischall/mcp-utils';
-import { authorizeUrl, exchangeAuthorizationCode, readOAuthConfig } from '../auth.js';
+import { authorizeUrl, exchangeAuthorizationCode, readBootstrapConfig } from '../auth.js';
 
 /**
  * The two tools that mint a refresh token, so nobody has to run a bootstrap
@@ -24,7 +24,7 @@ export function registerAuthTools(server: McpServer): void {
     {},
     { readOnlyHint: true },
     async () => {
-      const result = readOAuthConfig();
+      const result = readBootstrapConfig();
       if ('error' in result) return textResult({ error: result.error });
       // No network call: this is string assembly, and saying so stops a caller
       // treating a failure here as FreshBooks being down.
@@ -47,7 +47,7 @@ export function registerAuthTools(server: McpServer): void {
     // Not read-only: it spends the authorization code, which cannot be reused.
     { readOnlyHint: false, idempotentHint: false },
     async ({ code }: { code: string }) => {
-      const result = readOAuthConfig();
+      const result = readBootstrapConfig();
       if ('error' in result) return textResult({ error: result.error });
       const tokens = await exchangeAuthorizationCode(result.config, code);
       // The refresh token IS the durable credential mcp-host's authFlow

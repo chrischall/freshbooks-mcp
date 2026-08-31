@@ -43,6 +43,47 @@ export interface OAuthConfig {
   refreshToken: string;
 }
 
+/**
+ * Read the APP credentials only — client id, secret and redirect — without
+ * requiring a refresh token.
+ *
+ * This is what the bootstrap tools need. `readOAuthConfig` demands all three,
+ * which is right for every request path (they cannot work without a token) but
+ * wrong for the two tools whose whole purpose is MINTING that token: requiring
+ * it there makes the first-time flow impossible, which is the state a
+ * first-time user is always in.
+ *
+ * `refreshToken` comes back as `''`. Nothing on this path sends it — the
+ * authorization-code grant does not carry one — so an empty string is the
+ * honest value rather than a placeholder pretending to be a credential.
+ */
+export function readBootstrapConfig(): { config: OAuthConfig } | { error: string } {
+  const clientId = readEnvVar('FRESHBOOKS_CLIENT_ID');
+  const clientSecret = readEnvVar('FRESHBOOKS_CLIENT_SECRET');
+  const missing = [
+    clientId ? null : 'FRESHBOOKS_CLIENT_ID',
+    clientSecret ? null : 'FRESHBOOKS_CLIENT_SECRET',
+  ].filter((m): m is string => m !== null);
+
+  if (missing.length > 0) {
+    return {
+      error:
+        `Cannot start the OAuth flow: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset. ` +
+        'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be HTTPS with no ' +
+        'query string, e.g. https://localhost) and set those two. No refresh token is needed — ' +
+        'these tools exist to mint one.',
+    };
+  }
+  return {
+    config: {
+      clientId: clientId as string,
+      clientSecret: clientSecret as string,
+      refreshToken: '',
+      redirectUri: readEnvVar('FRESHBOOKS_REDIRECT_URI') ?? DEFAULT_REDIRECT_URI,
+    },
+  };
+}
+
 /** Read OAuth config, or return the reason it is unusable (deferred-config-error pattern). */
 export function readOAuthConfig(): { config: OAuthConfig } | { error: string } {
   const clientId = readEnvVar('FRESHBOOKS_CLIENT_ID');
