@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.0...v0.5.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **auth:** give hosted users recovery advice they can act on ([#32](https://github.com/chrischall/freshbooks-mcp/issues/32)) ([0a63f58](https://github.com/chrischall/freshbooks-mcp/commit/0a63f58f9b99e24100c886a66c3e1bc2b708fb43)), closes [#33](https://github.com/chrischall/freshbooks-mcp/issues/33)
+
 ## [0.5.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.4.0...v0.5.0) (2026-08-31)
 
 

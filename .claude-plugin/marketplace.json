@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "MCP server for FreshBooks — natural-language invoicing, clients, estimates, and payments via the FreshBooks API",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
       "displayName": "FreshBooks",
       "source": "./",
       "description": "MCP server for FreshBooks — manage invoices, clients, estimates, and payments via natural language",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": {
         "name": "Chris Hall"
       },
