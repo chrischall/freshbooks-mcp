@@ -1,6 +1,6 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig } from './auth.js';
+import { createTokenManager, hasRotated, readOAuthConfig, type OAuthConfig, recoveryHint } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -208,9 +208,7 @@ export class FreshbooksClient {
     const detail = extractErrorMessage(body) ?? `HTTP ${status}`;
     if (status === 401) {
       return new McpToolError(`FreshBooks rejected the request as unauthenticated: ${detail}`, {
-        hint:
-          'The access token was refused. If this persists, the refresh token may have been spent — ' +
-          're-run the OAuth bootstrap.',
+        hint: 'The access token was refused. If this persists, the refresh token may have been spent. ' + recoveryHint(),
       });
     }
     // Role refusals do not always arrive as 403: the accounting family also delivers
