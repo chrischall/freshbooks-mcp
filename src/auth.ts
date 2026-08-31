@@ -99,16 +99,23 @@ export function readOAuthConfig(): { config: OAuthConfig } | { error: string } {
     return {
       error:
         `FreshBooks is not configured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} unset. ` +
-        // Registering an app and running a bootstrap is what a LOCAL operator
-        // does. On a hosted registration neither is possible — the app is the
-        // operator's and there is no shell — so send the reader to the one
-        // route that exists there. `recoveryHint` is the single place that
-        // knows which environment this is; don't grow a copy here.
-        (readEnvVar('MCP_DATA_DIR')
+        // WHICH credential is missing decides the advice, not just the
+        // environment. `recoveryHint()` says "reconnect" when hosted, and
+        // reconnecting mints a TOKEN — it cannot supply an app credential. So
+        // routing every missing variable through it would answer a missing
+        // client id with a connect flow that runs and changes nothing.
+        //
+        // App credential missing: the operator's to fix, in both environments.
+        // Token missing (app credentials present): `recoveryHint()` already
+        // branches correctly — reconnect when hosted, the auth tools locally.
+        (clientId && clientSecret
           ? recoveryHint()
-          : 'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be HTTPS ' +
-            'with no query string, e.g. https://localhost), then run the one-time OAuth bootstrap ' +
-            'to obtain a refresh token.'),
+          : readEnvVar('MCP_DATA_DIR')
+            ? 'FRESHBOOKS_CLIENT_ID and FRESHBOOKS_CLIENT_SECRET identify the FreshBooks app ' +
+              'itself. On a hosted registration they belong to whoever operates it, so this is ' +
+              'theirs to fix — reconnecting cannot supply them.'
+            : 'Register an app at https://my.freshbooks.com/#/developer (redirect URI must be ' +
+              'HTTPS with no query string, e.g. https://localhost) and set its credentials.'),
     };
   }
   return {

@@ -103,28 +103,55 @@ describe('no site restates the recovery advice', () => {
 // 2026-08-31: the hosted registration's own healthcheck said "the environment
 // variable FRESHBOOKS_REFRESH_TOKEN is still not set", and the only way it
 // offered out was impossible.
-describe('an ABSENT credential gets the same environment-aware advice as a rejected one', () => {
-  const saved = process.env.MCP_DATA_DIR;
-  beforeEach(() => delete process.env.MCP_DATA_DIR);
+describe('an ABSENT credential gets advice keyed on WHICH one is missing', () => {
+  // Every FRESHBOOKS_* var is cleared and restored, per the convention in
+  // oauth-code.test.ts. Not hygiene: `clientWith` in client.test.ts SETS
+  // FRESHBOOKS_REFRESH_TOKEN on process.env, so a block that only managed
+  // MCP_DATA_DIR could see a token it never set and pass for the wrong reason.
+  const VARS = [
+    'MCP_DATA_DIR',
+    'FRESHBOOKS_CLIENT_ID',
+    'FRESHBOOKS_CLIENT_SECRET',
+    'FRESHBOOKS_REFRESH_TOKEN',
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of VARS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
   afterEach(() => {
-    if (saved === undefined) delete process.env.MCP_DATA_DIR;
-    else process.env.MCP_DATA_DIR = saved;
+    for (const k of VARS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
   });
 
-  async function missingTokenError(): Promise<string> {
+  /**
+   * The config is read in the CONSTRUCTOR, so the environment has to be set
+   * before the client is built. (An earlier version passed credentials as
+   * constructor options, which the constructor does not accept — it takes
+   * `{fetchImpl, storePath}` — so those values were silently ignored and the
+   * test only worked by accident of the ambient environment.)
+   */
+  async function configError(): Promise<string> {
     const { FreshbooksClient } = await import('../src/client.js');
-    const c = new FreshbooksClient({
-      clientId: 'id',
-      clientSecret: 'secret',
-      refreshToken: '',
-    } as never);
+    const c = new FreshbooksClient({ storePath: '/tmp/fb-absent-test.json' });
     try {
       await c.getIdentity();
-      throw new Error('expected the call to fail with no refresh token');
+      throw new Error('expected the call to fail with no credential');
     } catch (e) {
       const err = e as { message?: string; hint?: string; data?: { hint?: string } };
       return [err.message, err.hint, err.data?.hint].filter(Boolean).join(' ');
     }
+  }
+
+  /** App credentials present, token absent — the case a person actually hits. */
+  async function missingTokenError(): Promise<string> {
+    process.env.FRESHBOOKS_CLIENT_ID = 'cid';
+    process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
+    return configError();
   }
 
   it('tells a HOSTED user to reconnect, and never to set the variable', async () => {
@@ -147,5 +174,27 @@ describe('an ABSENT credential gets the same environment-aware advice as a rejec
   it('still tells a LOCAL user how to mint one', async () => {
     const text = await missingTokenError();
     expect(text).toMatch(/freshbooks_auth_url/);
+  });
+
+  // The environment is not the only axis. Reconnecting mints a TOKEN, so
+  // answering a missing APP credential with "reconnect this connector" sends
+  // someone through a flow that runs and changes nothing.
+  it('does NOT tell a hosted user to reconnect when the APP credential is what is missing', async () => {
+    process.env.MCP_DATA_DIR = '/data/state/reg_x';
+    process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
+    const text = await configError();
+    expect(text).toMatch(/FRESHBOOKS_CLIENT_ID/);
+    // The IMPERATIVE, not the word: the correct text here says "reconnecting
+    // cannot supply them", so a bare /reconnect/i flags the fix itself. Same
+    // trap as the `set FRESHBOOKS_` assertion above.
+    expect(text).not.toMatch(/reconnect this connector/i);
+    expect(text).toMatch(/operates it|theirs to fix/i);
+  });
+
+  it('sends a LOCAL user to register an app when the APP credential is missing', async () => {
+    process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
+    const text = await configError();
+    expect(text).toMatch(/register an app/i);
+    expect(text).not.toMatch(/reconnect this connector/i);
   });
 });
