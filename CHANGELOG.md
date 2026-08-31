@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.1...v0.5.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **auth:** give an ABSENT credential the same hosted-aware advice as a rejected one ([#35](https://github.com/chrischall/freshbooks-mcp/issues/35)) ([6126871](https://github.com/chrischall/freshbooks-mcp/commit/6126871d1b6a03728e3499784aecbf105d9e9962)), closes [#36](https://github.com/chrischall/freshbooks-mcp/issues/36)
+
 ## [0.5.1](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.0...v0.5.1) (2026-08-31)
 
 
