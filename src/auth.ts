@@ -10,6 +10,7 @@ import {
 } from '@chrischall/mcp-utils/session';
 
 const TOKEN_URL = 'https://api.freshbooks.com/auth/oauth/token';
+const AUTHORIZE_URL = 'https://auth.freshbooks.com/oauth/authorize/';
 const DEFAULT_REDIRECT_URI = 'https://localhost';
 const STORE_KEY = 'freshbooks';
 
@@ -92,6 +93,112 @@ interface TokenResponse {
  * than as JSON. A generic OAuth client that omits either field, or sends JSON, gets an
  * opaque `invalid_client`.
  */
+/**
+ * The consent URL a person opens to authorise this app.
+ *
+ * Carries the client ID and redirect only — never the secret. This URL goes
+ * into a browser, so anything in it lands in history and in every proxy along
+ * the way; a leaked client secret there would be as bad as leaking the token
+ * it protects.
+ */
+export function authorizeUrl(config: OAuthConfig): string {
+  const u = new URL(AUTHORIZE_URL);
+  u.searchParams.set('client_id', config.clientId);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('redirect_uri', config.redirectUri);
+  return u.toString();
+}
+
+/**
+ * Pull the authorisation code out of whatever the person pasted.
+ *
+ * They paste the whole redirect URL far more often than the bare code, because
+ * the bare code is the awkward thing to isolate — the browser hands them a URL.
+ * A URL carrying no `?code=` is REFUSED rather than passed on as a code: doing
+ * the latter spends the exchange and returns FreshBooks' opaque
+ * `invalid_grant`, which reads as "your app is misconfigured" instead of "that
+ * paste was the error page".
+ */
+export function extractAuthorizationCode(input: string): string {
+  const trimmed = (input ?? '').trim();
+  if (!trimmed) throw new McpToolError('No authorization code supplied.', {
+    hint: 'Paste either the code itself or the whole redirect URL from the browser.',
+  });
+  if (!trimmed.includes('://')) return trimmed;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+  const code = url.searchParams.get('code');
+  if (!code) {
+    const err = url.searchParams.get('error');
+    throw new McpToolError(
+      `That URL carries no ?code= parameter${err ? ` (it says error=${err})` : ''}.`,
+      { hint: 'Authorise again and paste the URL you land on, which contains ?code=…' },
+    );
+  }
+  return code;
+}
+
+/**
+ * Exchange an authorisation code for tokens — the ONE step that mints a
+ * refresh token. Everything afterwards rotates it.
+ *
+ * Form-encoded, not JSON: that is what FreshBooks' own SDK posts and what the
+ * endpoint accepts.
+ */
+export async function exchangeAuthorizationCode(
+  config: OAuthConfig,
+  codeOrRedirectUrl: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TokenResponse> {
+  const code = extractAuthorizationCode(codeOrRedirectUrl);
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    grant_type: 'authorization_code',
+    redirect_uri: config.redirectUri,
+    code,
+  });
+
+  const res = await fetchImpl(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body,
+  });
+
+  const raw = await res.text();
+  let parsed: Partial<TokenResponse> & { error?: string; error_description?: string };
+  try {
+    parsed = JSON.parse(raw) as typeof parsed;
+  } catch {
+    throw new McpToolError(`FreshBooks returned a non-JSON token response (HTTP ${res.status}).`, {
+      hint: 'Usually an outage or a proxy in front of the API. Authorise again for a new code.',
+    });
+  }
+
+  if (!res.ok || !parsed.access_token) {
+    const detail = parsed.error_description ?? parsed.error ?? raw.slice(0, 200);
+    // An authorization code is SINGLE-USE. Saying so is the difference between
+    // a person authorising again and a person retrying a spent code forever.
+    throw new McpToolError(`FreshBooks refused the authorization code: ${detail}`, {
+      hint:
+        'An authorization code is single-use and short-lived — this one is now spent, ' +
+        'whether or not it was valid. Open the consent URL again and exchange the NEW code.',
+    });
+  }
+
+  if (!parsed.refresh_token) {
+    throw new McpToolError('FreshBooks returned no refresh token for that code.', {
+      hint: 'Without a refresh token the connection cannot outlive the access token. Authorise again.',
+    });
+  }
+
+  return parsed as TokenResponse;
+}
+
 export async function exchangeRefreshToken(
   config: OAuthConfig,
   refreshToken: string,
