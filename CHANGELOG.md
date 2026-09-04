@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.2...v0.6.0) (2026-09-04)
+
+
+### Features
+
+* **tools:** minify every response — no formatting whitespace on any payload ([#47](https://github.com/chrischall/freshbooks-mcp/issues/47)) ([fe09ce3](https://github.com/chrischall/freshbooks-mcp/commit/fe09ce3a1ac29b1ffe5341de562a3ec7f9a4c5ff))
+
+
+### Bug Fixes
+
+* **build:** restore the literal em dash in the package description ([#51](https://github.com/chrischall/freshbooks-mcp/issues/51)) ([8a25a09](https://github.com/chrischall/freshbooks-mcp/commit/8a25a0976f7651864e503de10672dd039c03b094))
+
+
+### Refactor
+
+* **tools:** drop the unwired view.ts — compact would be a no-op on FreshBooks records ([#52](https://github.com/chrischall/freshbooks-mcp/issues/52)) ([01bdc83](https://github.com/chrischall/freshbooks-mcp/commit/01bdc83303c77f5e15149ee7edf75fb34bfcc109))
+
 ## [0.5.2](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.1...v0.5.2) (2026-08-31)
 
 
