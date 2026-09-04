@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { ACCOUNTING_RESOURCES } from '../resources.js';
 import { previewUnlessConfirmed, schemaConfirm } from './_confirm.js';
@@ -31,7 +31,7 @@ export function registerExpenseTools(server: McpServer, client: FreshbooksClient
       },
     },
     async ({ page, per_page, search }) =>
-      textResult(
+      minifiedResult(
         await client.accountingList(R.expenses.path, R.expenses.list, {
           page,
           perPage: per_page,
@@ -47,7 +47,7 @@ export function registerExpenseTools(server: McpServer, client: FreshbooksClient
       annotations: { readOnlyHint: true },
       inputSchema: { id: z.number().int().positive().describe('Expense id') },
     },
-    async ({ id }) => textResult(await client.accountingGet(R.expenses.path, id, R.expenses.single)),
+    async ({ id }) => minifiedResult(await client.accountingGet(R.expenses.path, id, R.expenses.single)),
   );
 
   server.registerTool(
@@ -62,7 +62,7 @@ export function registerExpenseTools(server: McpServer, client: FreshbooksClient
       },
     },
     async ({ page, per_page }) =>
-      textResult(
+      minifiedResult(
         await client.accountingList(R.expense_categories.path, R.expense_categories.list, {
           page,
           perPage: per_page,
@@ -105,7 +105,7 @@ export function registerExpenseTools(server: McpServer, client: FreshbooksClient
         expense: payload,
       });
       if (gate) return gate;
-      return textResult(await client.accountingWrite(R.expenses.path, R.expenses.single, payload));
+      return minifiedResult(await client.accountingWrite(R.expenses.path, R.expenses.single, payload));
     },
   );
 }

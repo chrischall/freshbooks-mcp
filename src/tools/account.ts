@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 
 export function registerAccountTools(server: McpServer, client: FreshbooksClient): void {
@@ -13,6 +13,6 @@ export function registerAccountTools(server: McpServer, client: FreshbooksClient
         'a 404 rather than a useful error.',
       annotations: { readOnlyHint: true },
     },
-    async () => textResult(await client.getIdentity()),
+    async () => minifiedResult(await client.getIdentity()),
   );
 }

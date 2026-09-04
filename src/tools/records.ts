@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { ACCOUNTING_RESOURCES, ACCOUNTING_RESOURCE_NAMES, type AccountingResourceName } from '../resources.js';
 
@@ -39,7 +39,7 @@ export function registerRecordTools(server: McpServer, client: FreshbooksClient)
     async ({ resource, page, per_page, search }) => {
       const r = ACCOUNTING_RESOURCES[resource as AccountingResourceName];
       const res = await client.accountingList(r.path, r.list, { page, perPage: per_page, filters: search });
-      return textResult({ resource, ...res, ...('note' in r ? { resourceNote: r.note } : {}) });
+      return minifiedResult({ resource, ...res, ...('note' in r ? { resourceNote: r.note } : {}) });
     },
   );
 
@@ -60,7 +60,7 @@ export function registerRecordTools(server: McpServer, client: FreshbooksClient)
     },
     async ({ resource, id }) => {
       const r = ACCOUNTING_RESOURCES[resource as AccountingResourceName];
-      return textResult(await client.accountingGet(r.path, id, r.single));
+      return minifiedResult(await client.accountingGet(r.path, id, r.single));
     },
   );
 }

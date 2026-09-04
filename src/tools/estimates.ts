@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { McpToolError, textResult } from '@chrischall/mcp-utils';
+import { McpToolError, minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { WrongIdentifierError } from '../client.js';
 import { ACCOUNTING_RESOURCES } from '../resources.js';
@@ -66,7 +66,7 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
         // accepted") already holds. Re-sending action_accept on an accepted estimate has
         // an unknown side effect (FreshBooks does not document one) and acceptance cannot
         // be undone, so the safe answer is to send nothing and say so.
-        return textResult({
+        return minifiedResult({
           changed: false,
           changedFields: [],
           alreadyAccepted: true,
@@ -83,7 +83,7 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       // reporting acceptance the API did not perform is the failure this whole tool is
       // shaped to avoid. Same predicate as the already-accepted branch above, so the two
       // agree on what accepted means.
-      return textResult({ ...result, accepted: isAccepted(result.estimate) });
+      return minifiedResult({ ...result, accepted: isAccepted(result.estimate) });
     },
   );
 
@@ -188,7 +188,7 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       const written = await mutate(client, id, payload, 'update');
       // Watch the fields this write actually set: the status projection alone never moves
       // on a field edit, so `changed` would report every successful update as a no-op.
-      return textResult({ ...(await verify(client, id, before, written, sentFields)), sentFields });
+      return minifiedResult({ ...(await verify(client, id, before, written, sentFields)), sentFields });
     },
   );
 
@@ -233,7 +233,7 @@ export function registerEstimateTools(server: McpServer, client: FreshbooksClien
       await assertAccountIdShape(client);
       const before = await readEstimateForWrite(client, id);
       const written = await mutate(client, id, payload, 'email');
-      return textResult({
+      return minifiedResult({
         ...(await verify(client, id, before, written)),
         emailed: true,
         // `changed` here describes the RECORD, not the mail. Sending an estimate that was
