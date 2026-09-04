@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { BUSINESS_RESOURCES } from '../resources.js';
 import { previewUnlessConfirmed, schemaConfirm } from './_confirm.js';
@@ -31,7 +31,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>
-      textResult(await client.businessList(R.projects.family, R.projects.path, R.projects.list, { page: p, perPage: per_page })),
+      minifiedResult(await client.businessList(R.projects.family, R.projects.path, R.projects.list, { page: p, perPage: per_page })),
   );
 
   server.registerTool(
@@ -42,7 +42,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
       inputSchema: { id: z.number().int().positive().describe('Project id') },
     },
     async ({ id }) =>
-      textResult(await client.businessGet(R.projects.family, R.projects.path, id, R.projects.single)),
+      minifiedResult(await client.businessGet(R.projects.family, R.projects.path, id, R.projects.single)),
   );
 
   server.registerTool(
@@ -75,7 +75,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
         project: payload,
       });
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.businessWrite(R.projects.family, R.projects.path, R.projects.single, payload),
       );
     },
@@ -91,7 +91,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>
-      textResult(
+      minifiedResult(
         await client.businessList(R.time_entries.family, R.time_entries.path, R.time_entries.list, {
           page: p,
           perPage: per_page,
@@ -126,7 +126,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
         { time_entry: payload },
       );
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.businessWrite(R.time_entries.family, R.time_entries.path, R.time_entries.single, payload),
       );
     },
@@ -141,7 +141,7 @@ export function registerProjectTools(server: McpServer, client: FreshbooksClient
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>
-      textResult(
+      minifiedResult(
         await client.businessList(R.services.family, R.services.path, R.services.list, {
           page: p,
           perPage: per_page,

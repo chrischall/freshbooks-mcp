@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import { authorizeUrl, exchangeAuthorizationCode, readBootstrapConfig } from '../auth.js';
 
 /**
@@ -25,10 +25,10 @@ export function registerAuthTools(server: McpServer): void {
     { readOnlyHint: true },
     async () => {
       const result = readBootstrapConfig();
-      if ('error' in result) return textResult({ error: result.error });
+      if ('error' in result) return minifiedResult({ error: result.error });
       // No network call: this is string assembly, and saying so stops a caller
       // treating a failure here as FreshBooks being down.
-      return textResult({
+      return minifiedResult({
         authorize_url: authorizeUrl(result.config),
         redirect_uri: result.config.redirectUri,
         next: 'Open authorize_url, approve, then pass the URL you land on to freshbooks_auth_exchange.',
@@ -48,13 +48,13 @@ export function registerAuthTools(server: McpServer): void {
     { readOnlyHint: false, idempotentHint: false },
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();
-      if ('error' in result) return textResult({ error: result.error });
+      if ('error' in result) return minifiedResult({ error: result.error });
       const tokens = await exchangeAuthorizationCode(result.config, code);
       // The refresh token IS the durable credential mcp-host's authFlow
       // captures from this step. The access token is deliberately NOT
       // returned: it expires in hours and echoing it only widens where a live
       // credential can be read from.
-      return textResult({
+      return minifiedResult({
         refresh_token: tokens.refresh_token,
         expires_in: tokens.expires_in,
         note: 'Store refresh_token as FRESHBOOKS_REFRESH_TOKEN. It rotates on every refresh.',

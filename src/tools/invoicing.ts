@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { textResult } from '@chrischall/mcp-utils';
+import { minifiedResult } from '@chrischall/mcp-utils';
 import type { FreshbooksClient } from '../client.js';
 import { previewUnlessConfirmed, schemaConfirm } from './_confirm.js';
 import { lineSchema } from './_lines.js';
@@ -44,7 +44,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         inputSchema: pageArgs,
       },
       async ({ page, per_page, search }) =>
-        textResult(
+        minifiedResult(
           await client.accountingList(res.path, res.list, {
             page,
             perPage: per_page,
@@ -60,7 +60,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         annotations: { readOnlyHint: true },
         inputSchema: { id: z.number().int().positive().describe(`The ${name.replace(/s$/, '')} id`) },
       },
-      async ({ id }) => textResult(await client.accountingGet(res.path, id, res.single)),
+      async ({ id }) => minifiedResult(await client.accountingGet(res.path, id, res.single)),
     );
   }
 
@@ -94,7 +94,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         { client: payload },
       );
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.accountingWrite(RESOURCES.clients.path, RESOURCES.clients.single, payload),
       );
     },
@@ -130,7 +130,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         { invoice: payload },
       );
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.accountingWrite(RESOURCES.invoices.path, RESOURCES.invoices.single, payload),
       );
     },
@@ -160,7 +160,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         { invoice: fields },
       );
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.accountingWrite(RESOURCES.invoices.path, RESOURCES.invoices.single, fields, { id }),
       );
     },
@@ -196,7 +196,7 @@ export function registerInvoicingTools(server: McpServer, client: FreshbooksClie
         { payment: payload },
       );
       if (gate) return gate;
-      return textResult(
+      return minifiedResult(
         await client.accountingWrite(RESOURCES.payments.path, RESOURCES.payments.single, payload),
       );
     },
