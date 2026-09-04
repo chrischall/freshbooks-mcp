@@ -5,7 +5,7 @@
 
 ### Features
 
-* **tools:** compact by default — strip media URLs, and minify every response ([#47](https://github.com/chrischall/freshbooks-mcp/issues/47)) ([fe09ce3](https://github.com/chrischall/freshbooks-mcp/commit/fe09ce3a1ac29b1ffe5341de562a3ec7f9a4c5ff))
+* **tools:** minify every response — no formatting whitespace on any payload ([#47](https://github.com/chrischall/freshbooks-mcp/issues/47)) ([fe09ce3](https://github.com/chrischall/freshbooks-mcp/commit/fe09ce3a1ac29b1ffe5341de562a3ec7f9a4c5ff))
 
 
 ### Bug Fixes
