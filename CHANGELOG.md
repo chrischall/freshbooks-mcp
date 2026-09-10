@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1](https://github.com/chrischall/freshbooks-mcp/compare/v0.6.0...v0.6.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **deps:** @chrischall/mcp-utils 0.26.1 ([#60](https://github.com/chrischall/freshbooks-mcp/issues/60)) ([4004501](https://github.com/chrischall/freshbooks-mcp/commit/400450151316ae7a1641d93e4df35ac144bed8a2))
+* **deps:** bump hono from 4.13.1 to 4.13.7 ([#58](https://github.com/chrischall/freshbooks-mcp/issues/58)) ([0e0d5c1](https://github.com/chrischall/freshbooks-mcp/commit/0e0d5c1da69d9b7cc9619bd825a4f7ecf5ed72da))
+* **deps:** declare the peer floors mcp-utils 0.26.1 requires ([#61](https://github.com/chrischall/freshbooks-mcp/issues/61)) ([1836bb8](https://github.com/chrischall/freshbooks-mcp/commit/1836bb898f42f122e69697d70c2b569b25ba2f1e))
+
 ## [0.6.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.5.2...v0.6.0) (2026-09-04)
 
 
