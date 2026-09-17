@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import { FreshbooksClient } from '../src/client.js';
 import { registerAccountTools } from '../src/tools/account.js';
+import { registerAuthTools } from '../src/tools/auth.js';
 import { registerEstimateTools } from '../src/tools/estimates.js';
 import { registerExpenseTools } from '../src/tools/expenses.js';
 import { registerInvoicingTools } from '../src/tools/invoicing.js';
@@ -50,6 +51,7 @@ describe('tool roster', () => {
   it('registers the invoicing surface', async () => {
     const { client } = trackedClient();
     const h = await createTestHarness((s) => {
+      registerAuthTools(s);
       registerAccountTools(s, client);
       registerInvoicingTools(s, client);
       registerEstimateTools(s, client);
@@ -58,6 +60,8 @@ describe('tool roster', () => {
       registerRecordTools(s, client);
     });
     const names = (await h.listTools()).map((t) => t.name).sort();
+    expect(names).toContain('freshbooks_auth_url');
+    expect(names).toContain('freshbooks_auth_exchange');
     expect(names).toContain('freshbooks_get_identity');
     expect(names).toContain('freshbooks_list_invoices');
     expect(names).toContain('freshbooks_get_invoice');
