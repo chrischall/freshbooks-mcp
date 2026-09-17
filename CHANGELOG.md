@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.6.1...v0.7.0) (2026-09-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** migrate server to SDK v2 ([#65](https://github.com/chrischall/freshbooks-mcp/issues/65))
+
+### Features
+
+* **mcp:** migrate server to SDK v2 ([#65](https://github.com/chrischall/freshbooks-mcp/issues/65)) ([ee7b845](https://github.com/chrischall/freshbooks-mcp/commit/ee7b84594b32069779552877f5168bdab41d0209))
+
+
+### Bug Fixes
+
+* **mcp:** cover OAuth tool registration ([#68](https://github.com/chrischall/freshbooks-mcp/issues/68)) ([b57357b](https://github.com/chrischall/freshbooks-mcp/commit/b57357bced47077dcd698d2985fca57e12148852)), closes [#66](https://github.com/chrischall/freshbooks-mcp/issues/66)
+
 ## [0.6.1](https://github.com/chrischall/freshbooks-mcp/compare/v0.6.0...v0.6.1) (2026-09-10)
 
 
