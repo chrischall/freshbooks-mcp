@@ -1,7 +1,11 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { minifiedResult } from '@chrischall/mcp-utils';
-import { authorizeUrl, exchangeAuthorizationCode, readBootstrapConfig } from '../auth.js';
+import type { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import { minifiedResult } from "@chrischall/mcp-utils";
+import {
+  authorizeUrl,
+  exchangeAuthorizationCode,
+  readBootstrapConfig,
+} from "../auth.js";
 
 /**
  * The two tools that mint a refresh token, so nobody has to run a bootstrap
@@ -18,37 +22,44 @@ import { authorizeUrl, exchangeAuthorizationCode, readBootstrapConfig } from '..
  * what comes back into a refresh token.
  */
 export function registerAuthTools(server: McpServer): void {
-  server.tool(
-    'freshbooks_auth_url',
-    "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL (or just its ?code= value) to freshbooks_auth_exchange. Read-only; contacts nothing.",
-    {},
-    { readOnlyHint: true },
+  server.registerTool(
+    "freshbooks_auth_url",
+    {
+      description:
+        "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL (or just its ?code= value) to freshbooks_auth_exchange. Read-only; contacts nothing.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
     async () => {
       const result = readBootstrapConfig();
-      if ('error' in result) return minifiedResult({ error: result.error });
+      if ("error" in result) return minifiedResult({ error: result.error });
       // No network call: this is string assembly, and saying so stops a caller
       // treating a failure here as FreshBooks being down.
       return minifiedResult({
         authorize_url: authorizeUrl(result.config),
         redirect_uri: result.config.redirectUri,
-        next: 'Open authorize_url, approve, then pass the URL you land on to freshbooks_auth_exchange.',
+        next: "Open authorize_url, approve, then pass the URL you land on to freshbooks_auth_exchange.",
       });
     },
   );
 
-  server.tool(
-    'freshbooks_auth_exchange',
-    'Exchange a FreshBooks authorization code for a refresh token. Accepts the whole redirect URL you landed on, or the bare code. The authorization code is SINGLE-USE — if this fails, get a new one from freshbooks_auth_url rather than retrying.',
+  server.registerTool(
+    "freshbooks_auth_exchange",
     {
-      code: z
-        .string()
-        .describe('The ?code= value, or the entire redirect URL you were sent to after approving.'),
+      description:
+        "Exchange a FreshBooks authorization code for a refresh token. Accepts the whole redirect URL you landed on, or the bare code. The authorization code is SINGLE-USE — if this fails, get a new one from freshbooks_auth_url rather than retrying.",
+      inputSchema: z.object({
+        code: z
+          .string()
+          .describe(
+            "The ?code= value, or the entire redirect URL you were sent to after approving.",
+          ),
+      }),
+      annotations: { readOnlyHint: false, idempotentHint: false },
     },
-    // Not read-only: it spends the authorization code, which cannot be reused.
-    { readOnlyHint: false, idempotentHint: false },
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();
-      if ('error' in result) return minifiedResult({ error: result.error });
+      if ("error" in result) return minifiedResult({ error: result.error });
       const tokens = await exchangeAuthorizationCode(result.config, code);
       // The refresh token IS the durable credential mcp-host's authFlow
       // captures from this step. The access token is deliberately NOT
@@ -57,7 +68,7 @@ export function registerAuthTools(server: McpServer): void {
       return minifiedResult({
         refresh_token: tokens.refresh_token,
         expires_in: tokens.expires_in,
-        note: 'Store refresh_token as FRESHBOOKS_REFRESH_TOKEN. It rotates on every refresh.',
+        note: "Store refresh_token as FRESHBOOKS_REFRESH_TOKEN. It rotates on every refresh.",
       });
     },
   );

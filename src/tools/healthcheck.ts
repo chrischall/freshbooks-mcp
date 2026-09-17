@@ -1,7 +1,7 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerCredentialHealthcheckTool } from '@chrischall/mcp-utils/healthcheck';
-import { recoveryHint } from '../auth.js';
-import type { FreshbooksClient } from '../client.js';
+import type { McpServer } from "@modelcontextprotocol/server";
+import { registerCredentialHealthcheckTool } from "@chrischall/mcp-utils/healthcheck";
+import { recoveryHint } from "../auth.js";
+import type { FreshbooksClient } from "../client.js";
 
 /**
  * Register `freshbooks_healthcheck` — resolves the OAuth config the way real
@@ -17,12 +17,15 @@ import type { FreshbooksClient } from '../client.js';
  * `/auth/api/v1/users/me` is the probe because it is the cheapest endpoint that
  * requires a valid access token, so it exercises the whole refresh path.
  */
-export function registerHealthcheckTools(server: McpServer, client: FreshbooksClient): void {
+export function registerHealthcheckTools(
+  server: McpServer,
+  client: FreshbooksClient,
+): void {
   registerCredentialHealthcheckTool({
     server,
-    prefix: 'freshbooks',
-    hostLabel: 'api.freshbooks.com',
-    probePath: '/auth/api/v1/users/me',
+    prefix: "freshbooks",
+    hostLabel: "api.freshbooks.com",
+    probePath: "/auth/api/v1/users/me",
     resolveCredential: async () => {
       const state = client.describeCredential();
       if (state.source === null && client.credentialError) {
@@ -41,9 +44,10 @@ export function registerHealthcheckTools(server: McpServer, client: FreshbooksCl
       // merely awkward. A healthcheck exists to tell someone what to do, so it
       // is the worst of the four sites to leave with local-only advice.
       credential_rejected:
-        'FreshBooks rejected the credential. Refresh tokens ROTATE — each refresh spends the old ' +
-        'one — so this usually means the stored token was superseded or the persisted copy was ' +
-        'lost. ' + recoveryHint(),
+        "FreshBooks rejected the credential. Refresh tokens ROTATE — each refresh spends the old " +
+        "one — so this usually means the stored token was superseded or the persisted copy was " +
+        "lost. " +
+        recoveryHint(),
     },
   });
 }

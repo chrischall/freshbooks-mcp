@@ -1,16 +1,19 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { minifiedResult } from '@chrischall/mcp-utils';
-import type { FreshbooksClient } from '../client.js';
+import type { McpServer } from "@modelcontextprotocol/server";
+import { minifiedResult } from "@chrischall/mcp-utils";
+import type { FreshbooksClient } from "../client.js";
 
-export function registerAccountTools(server: McpServer, client: FreshbooksClient): void {
+export function registerAccountTools(
+  server: McpServer,
+  client: FreshbooksClient,
+): void {
   server.registerTool(
-    'freshbooks_get_identity',
+    "freshbooks_get_identity",
     {
       description:
-        'Resolve the authenticated FreshBooks user and their identifiers: accountId (alphanumeric, ' +
-        'used by accounting and payments endpoints), businessId (integer, used by projects and time ' +
-        'tracking) and businessUuid. The three are not interchangeable — using the wrong one returns ' +
-        'a 404 rather than a useful error.',
+        "Resolve the authenticated FreshBooks user and their identifiers: accountId (alphanumeric, " +
+        "used by accounting and payments endpoints), businessId (integer, used by projects and time " +
+        "tracking) and businessUuid. The three are not interchangeable — using the wrong one returns " +
+        "a 404 rather than a useful error.",
       annotations: { readOnlyHint: true },
     },
     async () => minifiedResult(await client.getIdentity()),
