@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.7.0...v1.0.0) (2026-09-20)
+
+
+### Features
+
+* **deps:** take mcp-utils 1.0.0, fixing server/discover ([#69](https://github.com/chrischall/freshbooks-mcp/issues/69)) ([7e42cce](https://github.com/chrischall/freshbooks-mcp/commit/7e42cceb9198aebd1090ea42ce5ad12cf45c472a))
+
+
+### Bug Fixes
+
+* **release:** cut the major a breaking change earns ([#71](https://github.com/chrischall/freshbooks-mcp/issues/71)) ([7481a23](https://github.com/chrischall/freshbooks-mcp/commit/7481a233469fb9cc103d68871e30f83434724e99))
+* **release:** restate the Release-As footer the squash dropped ([#72](https://github.com/chrischall/freshbooks-mcp/issues/72)) ([14bb513](https://github.com/chrischall/freshbooks-mcp/commit/14bb513a3039fa7fa09b38354beface727fc990a))
+
 ## [0.7.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.6.1...v0.7.0) (2026-09-17)
 
 
