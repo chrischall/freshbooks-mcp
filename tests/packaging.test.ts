@@ -52,7 +52,14 @@ describe('packaging', () => {
   it('seeds a 0.x initial version rather than release-please\'s 1.0.0 default', () => {
     const p = read('release-please-config.json').packages['.'];
     expect(p['initial-version']).toBe('0.1.0');
-    expect(p['bump-minor-pre-major']).toBe(true);
+    // `bump-minor-pre-major` was asserted here too and is a DIFFERENT claim
+    // wearing the same sentence. `initial-version` pins the FIRST release;
+    // that flag governs every later breaking change, by downgrading one to a
+    // minor for as long as the package sits below 1.0. It kept this server on
+    // 0.x through the SDK v2 migration — a breaking change with its own
+    // warning section in the changelog — and would have kept it there for
+    // good. Removed, not inverted: the repos that behave correctly omit it.
+    expect(p['bump-minor-pre-major']).toBeUndefined();
   });
 
   it('keeps all manifests at one version', () => {
