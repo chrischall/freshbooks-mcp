@@ -298,3 +298,85 @@ describe('hasRotated', () => {
     expect(typeof hasRotated(CONFIG, { storePath })).toBe('boolean');
   });
 });
+
+/**
+ * Several processes (Claude Desktop's .mcpb plus any number of Claude Code
+ * sessions) share ONE store. Each reads it once at start, so without a re-read
+ * a process still holding a refresh token another process already spent would
+ * send it, get invalid_grant, and tell the human to re-mint — while the valid
+ * successor sat on disk. (chrischall/fleet-audit#113)
+ */
+describe('refresh across processes sharing one store', () => {
+  /** A token endpoint that, like FreshBooks, accepts each refresh token ONCE. */
+  function singleUseTokenServer(firstValid: string) {
+    const valid = new Set([firstValid]);
+    const calls: Array<Record<string, string>> = [];
+    let n = 0;
+    const fetchImpl = (async (_url: string, init: { body?: URLSearchParams }) => {
+      const body = Object.fromEntries((init.body as URLSearchParams).entries());
+      calls.push(body);
+      // Yield so concurrent refreshes genuinely interleave.
+      await new Promise((r) => setTimeout(r, 20));
+      if (!valid.delete(body.refresh_token)) {
+        return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+      }
+      n += 1;
+      valid.add(`rotated-${n}`);
+      return new Response(
+        JSON.stringify({
+          access_token: `access-${n}`,
+          refresh_token: `rotated-${n}`,
+          created_at: Math.floor(Date.now() / 1000),
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    return { fetchImpl, calls };
+  }
+
+  it('adopts the token another process rotated instead of spending the stale one', async () => {
+    const server = singleUseTokenServer(CONFIG.refreshToken);
+    // Both processes start while nothing is persisted: both hold env-token-1.
+    const a = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+    const b = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+
+    expect(await a.getAccessToken()).toBe('access-1');
+    // B must not replay env-token-1 (spent by A): it adopts A's result from disk.
+    expect(await b.getAccessToken()).toBe('access-1');
+    expect(server.calls).toHaveLength(1);
+  });
+
+  it('spends the newer on-disk refresh token when the adopted access token is also expired', async () => {
+    const server = singleUseTokenServer(CONFIG.refreshToken);
+    const a = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+    const b = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+    await a.getAccessToken();
+    expireStoredAccessToken();
+
+    expect(await b.getAccessToken()).toBe('access-2');
+    expect(server.calls.map((c) => c.refresh_token)).toEqual(['env-token-1', 'rotated-1']);
+    expect(readFileSync(storePath, 'utf8')).toContain('rotated-2');
+  });
+
+  it('two processes racing an expired token both succeed and spend it once', async () => {
+    const server = singleUseTokenServer(CONFIG.refreshToken);
+    const a = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+    const b = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+
+    const [ta, tb] = await Promise.all([a.getAccessToken(), b.getAccessToken()]);
+    expect(ta).toBe('access-1');
+    expect(tb).toBe('access-1');
+    expect(server.calls).toHaveLength(1);
+    expect(existsSync(`${storePath}.lock`)).toBe(false);
+  });
+
+  it('breaks a lock left behind by a process that died mid-refresh', async () => {
+    // A pid that cannot be alive, so the lock is provably stale.
+    writeFileSync(`${storePath}.lock`, '2147483646');
+    const server = singleUseTokenServer(CONFIG.refreshToken);
+    const tm = createTokenManager(CONFIG, { storePath, fetchImpl: server.fetchImpl });
+    expect(await tm.getAccessToken()).toBe('access-1');
+    expect(existsSync(`${storePath}.lock`)).toBe(false);
+  });
+});
