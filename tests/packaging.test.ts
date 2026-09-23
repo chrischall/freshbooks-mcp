@@ -26,6 +26,20 @@ describe('packaging', () => {
     expect(pkg.files).toContain('skills/');
   });
 
+  it('lets a Claude Desktop (.mcpb) user choose the business and confirm its accountId', () => {
+    // A multi-business identity has writes refused until FRESHBOOKS_BUSINESS_ID is
+    // set; the Desktop extension UI can only set what user_config exposes.
+    const m = read('manifest.json');
+    for (const [key, env] of [
+      ['freshbooks_business_id', 'FRESHBOOKS_BUSINESS_ID'],
+      ['freshbooks_account_id', 'FRESHBOOKS_ACCOUNT_ID'],
+    ]) {
+      expect(m.user_config[key], key).toBeDefined();
+      expect(m.user_config[key].required, key).toBe(false);
+      expect(m.server.mcp_config.env[env]).toBe(`\${user_config.${key}}`);
+    }
+  });
+
   it('keeps the mcpb node floor on an LTS release', () => {
     // Not 26 — an LTS floor is what lets LTS users install the .mcpb at all.
     expect(read('manifest.json').compatibility.runtimes.node).toBe('>=22.5');
