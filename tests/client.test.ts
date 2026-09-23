@@ -590,4 +590,70 @@ describe('identity with several business memberships', () => {
     process.env.FRESHBOOKS_ACCOUNT_ID = 'NOPE';
     await expect(multiClient().getIdentity()).rejects.toThrow(/FRESHBOOKS_BUSINESS_ID/);
   });
+
+  it('refuses FRESHBOOKS_ACCOUNT_ID naming a different business than FRESHBOOKS_BUSINESS_ID', async () => {
+    process.env.FRESHBOOKS_BUSINESS_ID = '222';
+    process.env.FRESHBOOKS_ACCOUNT_ID = 'CLIENTACCT';
+    await expect(multiClient().getIdentity()).rejects.toThrow(/CLIENTACCT[\s\S]*222/);
+  });
+
+  it('accepts FRESHBOOKS_ACCOUNT_ID when it matches the chosen business', async () => {
+    process.env.FRESHBOOKS_BUSINESS_ID = '222';
+    process.env.FRESHBOOKS_ACCOUNT_ID = 'OWNACCT';
+    const id = await multiClient().getIdentity();
+    expect(id).toMatchObject({ accountId: 'OWNACCT', businessId: 222 });
+  });
+
+  // business.account_id has been observed null on a real owner account. With
+  // several memberships, falling back to roles[0].accountid pairs the chosen
+  // business with whichever account FreshBooks listed first — often a vendor's.
+  describe('when the chosen business carries no account_id', () => {
+    const NULL_ME = {
+      response: {
+        identity_id: 1,
+        email: 'a@b.com',
+        roles: [
+          { role: 'client', accountid: 'CLIENTACCT' },
+          { role: 'owner', accountid: 'OWNACCT' },
+        ],
+        business_memberships: [
+          { role: 'client', business: { id: 111, account_id: null, business_uuid: 'u1', name: 'Vendor Co' } },
+          { role: 'owner', business: { id: 222, account_id: null, business_uuid: 'u2', name: 'My Co' } },
+        ],
+      },
+    };
+    function nullClient(calls: string[] = []) {
+      return clientWith((url, init) => {
+        calls.push(`${init.method ?? 'GET'} ${url}`);
+        if (url.includes('/users/me')) return new Response(JSON.stringify(NULL_ME), { status: 200 });
+        if (url.includes('/projects/')) {
+          return new Response(JSON.stringify({ project: { id: 9 }, projects: [], meta: {} }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ response: { result: { invoice: { id: 9 }, invoices: [] } } }), {
+          status: 200,
+        });
+      }, `/tmp/fb-multi-null-${Math.random().toString(16).slice(2)}.json`);
+    }
+
+    it('refuses every write rather than pairing businessId 222 with the first role account', async () => {
+      process.env.FRESHBOOKS_BUSINESS_ID = '222';
+      const calls: string[] = [];
+      const c = nullClient(calls);
+      const id = await c.getIdentity();
+      expect(id.businessId).toBe(222);
+      expect(id.note).toMatch(/account_id/);
+      await expect(c.accountingWrite('invoices/invoices', 'invoice', { a: 1 })).rejects.toThrow(/222/);
+      await expect(c.businessWrite('projects', 'projects', 'project', { a: 1 })).rejects.toThrow(/222/);
+      expect(calls.filter((x) => !x.startsWith('GET'))).toEqual([]);
+    });
+
+    it('still refuses writes when FRESHBOOKS_ACCOUNT_ID is set but cannot be checked against the business', async () => {
+      process.env.FRESHBOOKS_BUSINESS_ID = '222';
+      process.env.FRESHBOOKS_ACCOUNT_ID = 'CLIENTACCT';
+      const calls: string[] = [];
+      const c = nullClient(calls);
+      await expect(c.accountingWrite('invoices/invoices', 'invoice', { a: 1 })).rejects.toThrow(/222/);
+      expect(calls.filter((x) => !x.startsWith('GET'))).toEqual([]);
+    });
+  });
 });
