@@ -35,7 +35,9 @@
       "env": {
         "FRESHBOOKS_CLIENT_ID": "${user_config.freshbooks_client_id}",
         "FRESHBOOKS_CLIENT_SECRET": "${user_config.freshbooks_client_secret}",
-        "FRESHBOOKS_REFRESH_TOKEN": "${user_config.freshbooks_refresh_token}"
+        "FRESHBOOKS_REFRESH_TOKEN": "${user_config.freshbooks_refresh_token}",
+        "FRESHBOOKS_BUSINESS_ID": "${user_config.freshbooks_business_id}",
+        "FRESHBOOKS_ACCOUNT_ID": "${user_config.freshbooks_account_id}"
       }
     }
   },
@@ -59,6 +61,18 @@
       "description": "Refresh token from the one-time OAuth bootstrap",
       "required": true,
       "sensitive": true
+    },
+    "freshbooks_business_id": {
+      "type": "string",
+      "title": "Business ID (optional)",
+      "description": "The integer businessId to work in. Required for writes when your FreshBooks login belongs to more than one business; see freshbooks_get_identity for the list.",
+      "required": false
+    },
+    "freshbooks_account_id": {
+      "type": "string",
+      "title": "Account ID (optional)",
+      "description": "The accountId of that same business. Only needed when FreshBooks reports no account_id for it, so invoices and other accounting writes know whose books to use.",
+      "required": false
     }
   },
   "compatibility": {

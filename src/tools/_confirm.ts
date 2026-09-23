@@ -18,11 +18,14 @@ export function previewUnlessConfirmed(
   method: string,
   path: string,
   body?: unknown,
+  /** Shown ahead of the payload — e.g. who an email would go to. */
+  highlights: Record<string, unknown> = {},
 ): CallToolResult | null {
   if (confirm === true) return null;
   return minifiedResult({
     dryRun: true,
     action,
+    ...highlights,
     method,
     path,
     ...(body !== undefined ? { willSend: body } : {}),

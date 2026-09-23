@@ -35,7 +35,15 @@ env:
     help: >-
       Overrides the account id normally resolved from /auth/api/v1/users/me. Set
       it explicitly when the authenticated identity belongs to no business
-      membership and resolution fails.
+      membership and resolution fails, or, together with FRESHBOOKS_BUSINESS_ID,
+      when FreshBooks reports no account_id for the chosen business (accounting
+      writes are refused until the pairing is confirmed this way).
+  - name: FRESHBOOKS_BUSINESS_ID
+    required: false
+    help: >-
+      The integer businessId to work in when the authenticated identity belongs
+      to several businesses. Without it, reads use the first business FreshBooks
+      lists and writes are refused rather than landing in the wrong books.
 state:
   dataDir: true
   reason: >-

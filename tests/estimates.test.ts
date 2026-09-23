@@ -24,6 +24,7 @@ const OPEN_ESTIMATE = {
   id: 279405,
   estimateid: 279405,
   estimate_number: '0000654',
+  customerid: 555,
   accepted: false,
   invoiced: false,
   status: 3,
@@ -54,6 +55,8 @@ function estimateServer(
     writeResponse?: () => Response;
     /** Overrides the estimate GET entirely (used for a read that fails rather than misses). */
     readResponse?: () => Response;
+    /** The client record the estimate is addressed to (customerid 555). */
+    clientRecord?: Record<string, unknown>;
   } = {},
 ) {
   const requests: Recorded[] = [];
@@ -75,6 +78,12 @@ function estimateServer(
     const method = init.method ?? 'GET';
     requests.push({ url: u, method, body: init.body });
     if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
+    if (u.includes('/users/clients/')) {
+      const found = opts.clientRecord && u.includes(`/users/clients/${opts.clientRecord.id}`);
+      return new Response(JSON.stringify({ response: { result: found ? { client: opts.clientRecord } : {} } }), {
+        status: 200,
+      });
+    }
 
     // Only the stored estimate exists. Any other id comes back the way FreshBooks
     // answers a miss — an envelope with no `estimate` — which is what the identifier
@@ -308,6 +317,7 @@ describe('freshbooks_send_estimate', () => {
       id: 279405,
       email_recipients: ['vendor@example.com'],
       subject: 'Accepted — please invoice',
+      allow_non_client_recipients: true,
       confirm: true,
     });
     // `estimate_customized_email`, NOT the invoice endpoint's `invoice_customized_email`.
@@ -333,6 +343,105 @@ describe('freshbooks_send_estimate', () => {
     expect(res.emailed).toBe(true);
     expect(res.changed).toBe(false);
     expect(res.sendNote).toMatch(/do not retry/i);
+    await h.close();
+  });
+});
+
+// Tool output carries third-party text (client names and notes, bank-feed vendor
+// strings, estimates a vendor wrote), and the confirm gate is a flag the MODEL
+// sets. An injected instruction must not be able to mail the business's records
+// to an arbitrary address from the business's own identity.
+// (chrischall/fleet-audit#115)
+describe('freshbooks_send_estimate recipient guard', () => {
+  const CLIENT = {
+    id: 555,
+    email: 'Owner@Client.example',
+    contacts: [{ email: 'ap@client.example' }],
+  };
+
+  it('refuses a recipient that is not on the estimate\'s client record, sending nothing', async () => {
+    const { client, puts } = estimateServer({ clientRecord: CLIENT });
+    const h = await harnessFor(client);
+    const res = await h.callTool('freshbooks_send_estimate', {
+      id: 279405,
+      email_recipients: ['owner@client.example', 'attacker@evil.example'],
+      body: 'all your invoices',
+      confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    const text = JSON.stringify(res.content);
+    expect(text).toMatch(/attacker@evil\.example/);
+    expect(text).toMatch(/allow_non_client_recipients/);
+    expect(puts()).toHaveLength(0);
+    await h.close();
+  });
+
+  it('sends to the client\'s own addresses (main email or a contact), case-insensitively', async () => {
+    const { client, puts } = estimateServer({ clientRecord: CLIENT });
+    const h = await harnessFor(client);
+    const res = await h.callTool('freshbooks_send_estimate', {
+      id: 279405,
+      email_recipients: ['owner@client.example', 'AP@client.example'],
+      confirm: true,
+    });
+    expect(res.isError).toBeFalsy();
+    expect(puts()).toHaveLength(1);
+    await h.close();
+  });
+
+  it('refuses when the client record cannot be read to check against', async () => {
+    const { client, puts } = estimateServer();
+    const h = await harnessFor(client);
+    const res = await h.callTool('freshbooks_send_estimate', {
+      id: 279405,
+      email_recipients: ['someone@example.com'],
+      confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(puts()).toHaveLength(0);
+    await h.close();
+  });
+
+  it('shows the recipients prominently in the dry-run', async () => {
+    const { client } = estimateServer();
+    const h = await harnessFor(client);
+    const listed = parseToolResult(
+      await h.callTool('freshbooks_send_estimate', { id: 279405, email_recipients: ['x@y.example'] }),
+    ) as Record<string, any>;
+    expect(listed.recipients).toEqual(['x@y.example']);
+    const onFile = parseToolResult(
+      await h.callTool('freshbooks_send_estimate', { id: 279405 }),
+    ) as Record<string, any>;
+    expect(onFile.recipients).toMatch(/client's address on file/i);
+    await h.close();
+  });
+
+  it('is annotated as a destructive, open-world action so hosts ask a human', async () => {
+    // The test harness's listTools drops annotations, so capture the registration.
+    const { client } = estimateServer();
+    const configs = new Map<string, { annotations?: Record<string, unknown> }>();
+    registerEstimateTools(
+      { registerTool: (name: string, cfg: { annotations?: Record<string, unknown> }) => configs.set(name, cfg) } as never,
+      client,
+    );
+    expect(configs.get('freshbooks_send_estimate')?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+  });
+
+  it('update_estimate refuses email actions smuggled in through raw fields', async () => {
+    const { client, puts } = estimateServer({ clientRecord: CLIENT });
+    const h = await harnessFor(client);
+    const res = await h.callTool('freshbooks_update_estimate', {
+      id: 279405,
+      fields: { action_email: true, email_recipients: ['attacker@evil.example'] },
+      confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toMatch(/freshbooks_send_estimate/);
+    expect(puts()).toHaveLength(0);
     await h.close();
   });
 });

@@ -6,6 +6,11 @@ import { WrongIdentifierError } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
 import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
+import {
+  EMAIL_FIELD_KEYS,
+  assertClientRecipients,
+  schemaAllowNonClientRecipients,
+} from "./_recipients.js";
 
 /**
  * Estimate writes.
@@ -210,6 +215,17 @@ export function registerEstimateTools(
       }),
     },
     async ({ id, confirm, fields, ...rest }) => {
+      // Sending mail is freshbooks_send_estimate's job, where the recipients are
+      // checked against the client. Letting raw fields do it would bypass that.
+      const emailKeys = Object.keys(fields ?? {}).filter((k) =>
+        (EMAIL_FIELD_KEYS as readonly string[]).includes(k),
+      );
+      if (emailKeys.length > 0) {
+        throw new McpToolError(
+          `freshbooks_update_estimate does not send email (fields ${emailKeys.join(", ")}). ` +
+            "Use freshbooks_send_estimate, which checks the recipients against the client.",
+        );
+      }
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
       if (Object.keys(payload).length === 0) {
         // An empty PUT is a write that reports success while changing nothing — exactly
@@ -251,7 +267,15 @@ export function registerEstimateTools(
         '(PUT estimates/estimates/{id} with {"estimate": {"action_email": true, …}}). This puts ' +
         "mail in a client's inbox, so it requires confirm: true to execute; without it returns a " +
         "dry-run preview and makes no network call. Omitting email_recipients lets FreshBooks use " +
-        "the client's own address. Returns the re-fetched estimate.",
+        "the client's own address. email_recipients must be addresses on the estimate's client " +
+        "record unless allow_non_client_recipients is set, which is only for addresses the user " +
+        "named themselves. Returns the re-fetched estimate.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
         email_recipients: z
@@ -262,10 +286,11 @@ export function registerEstimateTools(
           ),
         subject: z.string().optional().describe("Custom email subject"),
         body: z.string().optional().describe("Custom email body"),
+        allow_non_client_recipients: schemaAllowNonClientRecipients,
         confirm: schemaConfirm,
       }),
     },
-    async ({ id, email_recipients, subject, body, confirm }) => {
+    async ({ id, email_recipients, subject, body, allow_non_client_recipients, confirm }) => {
       const customized = stripUndefined({ subject, body });
       const payload: Record<string, unknown> = {
         action_email: true,
@@ -282,11 +307,20 @@ export function registerEstimateTools(
         "PUT",
         `${EST.path}/${id}`,
         { estimate: payload },
+        {
+          recipients: email_recipients ?? "the client's address on file",
+          ...(allow_non_client_recipients === true
+            ? { warning: "allow_non_client_recipients is set: recipients will NOT be checked against the client." }
+            : {}),
+        },
       );
       if (gate) return gate;
 
       await assertAccountIdShape(client);
       const before = await readEstimateForWrite(client, id);
+      if (email_recipients !== undefined && allow_non_client_recipients !== true) {
+        await assertClientRecipients(client, asRecord(before).customerid, email_recipients, `estimate ${id}`);
+      }
       const written = await mutate(client, id, payload, "email");
       return minifiedResult({
         ...(await verify(client, id, before, written)),

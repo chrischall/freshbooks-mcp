@@ -24,6 +24,25 @@ export interface Identity {
   accountRole: string | null;
   /** The role held on the business itself (`owner`, `member`, …). */
   businessRole: string | null;
+  /**
+   * Every business this identity belongs to — present only when there is more
+   * than one, so the caller can see what else could have been chosen.
+   */
+  businesses?: BusinessSummary[];
+  /**
+   * Set when writes are refused: the business was not chosen explicitly among several,
+   * or FreshBooks returned no account_id for the chosen one so its accountId is unconfirmed.
+   */
+  note?: string;
+}
+
+/** One business membership, as listed when an identity belongs to several. */
+export interface BusinessSummary {
+  businessId: number | null;
+  accountId: string | null;
+  businessUuid: string | null;
+  name: string | null;
+  role: string | null;
 }
 
 /** Families keyed by businessId rather than accountId, each on its own URL prefix. */
@@ -88,6 +107,19 @@ export class FreshbooksClient {
   private readonly config: OAuthConfig | null;
   private tokenManager: TokenManager | null = null;
   private identityCache: Identity | null = null;
+  /**
+   * Why writes are refused for the cached identity, or null when they are allowed:
+   * the business was guessed among several, or its accountId could not be tied to it.
+   */
+  /**
+   * Why writes are refused, per family. Projects and time entries use only the
+   * chosen businessId, so an accountId that cannot be tied to that business blocks
+   * accounting writes alone; a business that was guessed rather than chosen blocks both.
+   */
+  private writeRefusal: {
+    accounting: { message: string; hint: string } | null;
+    business: { message: string; hint: string } | null;
+  } = { accounting: null, business: null };
   private readonly fetchImpl: typeof fetch;
   private readonly storePath: string | undefined;
 
@@ -283,14 +315,61 @@ export class FreshbooksClient {
   async getIdentity(): Promise<Identity> {
     if (this.identityCache !== null) return this.identityCache;
 
-    const override = readEnvVar('FRESHBOOKS_ACCOUNT_ID');
+    const accountOverride = readEnvVar('FRESHBOOKS_ACCOUNT_ID');
+    const businessOverride = readEnvVar('FRESHBOOKS_BUSINESS_ID');
     const body = (await this.request('/auth/api/v1/users/me')) as {
       response?: Record<string, unknown>;
     };
     const me = (body.response ?? body) as Record<string, unknown>;
-    const memberships = Array.isArray(me.business_memberships) ? me.business_memberships : [];
-    const first = (memberships[0] ?? {}) as Record<string, unknown>;
-    const business = (first.business ?? {}) as Record<string, unknown>;
+    const memberships = (Array.isArray(me.business_memberships) ? me.business_memberships : []).map(
+      (m) => (m ?? {}) as Record<string, unknown>,
+    );
+    const businessOf = (m: Record<string, unknown>) => (m.business ?? {}) as Record<string, unknown>;
+    const summaries: BusinessSummary[] = memberships.map((m) => {
+      const b = businessOf(m);
+      return {
+        businessId: asNumber(b.id),
+        accountId: asString(b.account_id),
+        businessUuid: asString(b.business_uuid),
+        name: asString(b.name),
+        role: asString(m.role),
+      };
+    });
+    const listing = () =>
+      summaries
+        .map((b) => `${b.businessId} (${b.name ?? 'unnamed'}, accountId ${b.accountId ?? 'none'}, role ${b.role ?? 'unknown'})`)
+        .join('; ');
+
+    // Which business every tool reads and writes. With several memberships the
+    // API's ordering is NOT a choice: it decided whose books time entries and
+    // invoices landed in. An explicit choice selects the membership as a whole,
+    // so accountId and businessId always come from the SAME business.
+    let chosenIndex: number;
+    let ambiguous = false;
+    if (businessOverride !== undefined) {
+      chosenIndex = summaries.findIndex((b) => String(b.businessId) === businessOverride.trim());
+      if (chosenIndex < 0) {
+        throw new McpToolError(
+          `FRESHBOOKS_BUSINESS_ID=${businessOverride} matches none of this identity's businesses: ${listing() || 'none'}.`,
+          { hint: ownerSetHint('FRESHBOOKS_BUSINESS_ID') },
+        );
+      }
+    } else if (accountOverride !== undefined && memberships.length > 1) {
+      chosenIndex = summaries.findIndex((b) => b.accountId === accountOverride);
+      if (chosenIndex < 0) {
+        throw new McpToolError(
+          `FRESHBOOKS_ACCOUNT_ID=${accountOverride} does not identify one of this identity's businesses, ` +
+            `so the businessId for projects and time tracking cannot be matched to it: ${listing()}. ` +
+            'Set FRESHBOOKS_BUSINESS_ID to the businessId to work in.',
+          { hint: 'Choose the business explicitly. ' + ownerSetHint('FRESHBOOKS_BUSINESS_ID') },
+        );
+      }
+    } else {
+      chosenIndex = 0;
+      ambiguous = memberships.length > 1;
+    }
+    const first = memberships[chosenIndex] ?? {};
+    const business = businessOf(first);
 
     // `business.account_id` is NOT reliable: observed live as null on a real owner
     // account while the usable accountId sat at roles[0].accountid. Walk the known
@@ -304,9 +383,42 @@ export class FreshbooksClient {
       .map((c) => asString((c as Record<string, unknown>).account_id))
       .find((v): v is string => v !== null);
 
+    // With several memberships only an accountId the CHOSEN membership carries is
+    // known to belong to it: roles[] and business_clients are not keyed by business,
+    // so their first accountid is whichever account FreshBooks listed first — often
+    // a vendor's, which would split invoices and time entries across two books.
+    const multi = memberships.length > 1;
+    const membershipAccountId = asString(business.account_id);
+    const chosenBusinessId = asNumber(business.id);
+    if (
+      accountOverride !== undefined &&
+      (multi || businessOverride !== undefined) &&
+      membershipAccountId !== null &&
+      accountOverride !== membershipAccountId
+    ) {
+      throw new McpToolError(
+        `FRESHBOOKS_ACCOUNT_ID=${accountOverride} does not belong to business ${chosenBusinessId}, whose ` +
+          `accountId is ${membershipAccountId}. Invoices and expenses would land in one business's books ` +
+          `and projects and time entries in another's: ${listing()}.`,
+        {
+          hint:
+            'Unset FRESHBOOKS_ACCOUNT_ID (it is derived from FRESHBOOKS_BUSINESS_ID) or set it to the ' +
+            'accountId of the same business. ' +
+            ownerSetHint('FRESHBOOKS_BUSINESS_ID'),
+        },
+      );
+    }
+    const accountUnconfirmed = multi && membershipAccountId === null;
+    // FreshBooks gave nothing to check the pairing against, so an explicit
+    // FRESHBOOKS_BUSINESS_ID + FRESHBOOKS_ACCOUNT_ID pair is the operator's own
+    // decision about whose books this is — honour it rather than lock them out.
+    const operatorPaired =
+      accountUnconfirmed && accountOverride !== undefined && businessOverride !== undefined;
+    const accountUntied = accountUnconfirmed && !operatorPaired;
+
     const accountId =
-      override ?? asString(business.account_id) ?? roleAccountId ?? clientAccountId ?? null;
-    const businessId = asNumber(business.id);
+      accountOverride ?? membershipAccountId ?? roleAccountId ?? clientAccountId ?? null;
+    const businessId = chosenBusinessId;
 
     if (accountId === null || businessId === null) {
       throw new McpToolError(
@@ -333,8 +445,75 @@ export class FreshbooksClient {
       businessName: asString(business.name),
       accountRole: typeof accountRole === 'string' ? accountRole : null,
       businessRole: asString(first.role),
+      ...(memberships.length > 1 ? { businesses: summaries } : {}),
+      ...(ambiguous
+        ? {
+            note:
+              `This identity belongs to ${memberships.length} businesses and none was chosen, so reads ` +
+              `use the first one FreshBooks listed (${businessId}) and writes are refused. ` +
+              'Set FRESHBOOKS_BUSINESS_ID to the businessId to work in.',
+          }
+        : accountUntied
+          ? {
+              note:
+                `FreshBooks returned no account_id for business ${businessId}, so accountId ${accountId} ` +
+                'cannot be confirmed to belong to it: invoice, expense and other accounting writes are ' +
+                'refused (projects and time entries still work) and reads of accounting records may show ' +
+                "another business's books. FRESHBOOKS_ACCOUNT_ID, given alongside FRESHBOOKS_BUSINESS_ID, " +
+                "confirms this business's accountId.",
+            }
+          : operatorPaired
+            ? {
+                note:
+                  `FreshBooks returned no account_id for business ${businessId}; accountId ${accountId} is ` +
+                  'used because FRESHBOOKS_BUSINESS_ID and FRESHBOOKS_ACCOUNT_ID were both set, and ' +
+                  'FreshBooks could not confirm the pairing.',
+              }
+            : {}),
+    };
+    const names = summaries.map((b) => `${b.businessId} (${b.name ?? 'unnamed'})`).join(', ');
+    const ambiguousRefusal = ambiguous
+      ? {
+          message:
+            `Refusing to write: this identity belongs to several FreshBooks businesses (${names}) and ` +
+            'FRESHBOOKS_BUSINESS_ID does not say which one to write to.',
+          hint: ownerSetHint('FRESHBOOKS_BUSINESS_ID'),
+        }
+      : null;
+    this.writeRefusal = {
+      business: ambiguousRefusal,
+      accounting:
+        ambiguousRefusal ??
+        (accountUntied
+          ? {
+              message:
+                `Refusing to write: FreshBooks returned no account_id for business ${businessId}, so accountId ` +
+                `${accountId} cannot be confirmed to belong to it — invoices could land in another business's ` +
+                `books while projects and time entries land in ${businessId}'s. Businesses: ${names}.`,
+              hint:
+                "Confirm the pairing with this business's own accountId, given alongside " +
+                'FRESHBOOKS_BUSINESS_ID. ' +
+                ownerSetHint('FRESHBOOKS_ACCOUNT_ID'),
+            }
+          : null),
     };
     return this.identityCache;
+  }
+
+  /**
+   * Refuse a write while the business was guessed rather than chosen — creating
+   * records in the wrong company's books is not undoable from here.
+   */
+  private async identityForWrite(
+    method: string | undefined,
+    family: 'accounting' | 'business',
+  ): Promise<Identity> {
+    const identity = await this.getIdentity();
+    const refusal = this.writeRefusal[family];
+    if (method !== undefined && method !== 'GET' && refusal !== null) {
+      throw new McpToolError(refusal.message, { hint: refusal.hint });
+    }
+    return identity;
   }
 
   /** Accounting family: `/accounting/account/{accountId}/{path}`, envelope `response.result`. */
@@ -342,7 +521,7 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<Record<string, unknown>> {
-    const { accountId } = await this.getIdentity();
+    const { accountId } = await this.identityForWrite(init.method, 'accounting');
     const body = (await this.request(
       `/accounting/account/${accountId}/${path}`,
       init,
@@ -382,7 +561,7 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<Record<string, unknown>> {
-    const { businessId } = await this.getIdentity();
+    const { businessId } = await this.identityForWrite(init.method, 'business');
     // `family` IS the URL prefix for all three of these.
     const body = await this.request(`/${family}/business/${businessId}/${path}`, init);
     return (body ?? {}) as Record<string, unknown>;

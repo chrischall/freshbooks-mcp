@@ -183,3 +183,97 @@ describe('business-scoped tools', () => {
     await h.close();
   });
 });
+
+// update_invoice / create_invoice take raw fields, which can carry
+// email_recipients. Same exfiltration path as send_estimate, same guard.
+// (chrischall/fleet-audit#115)
+describe('invoice recipient guard', () => {
+  function invoiceServer() {
+    const requests: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetchImpl = (async (url: string, init: RequestInit = {}) => {
+      const u = String(url);
+      if (u.includes('/auth/oauth/token')) {
+        return new Response(
+          JSON.stringify({ access_token: 'at', refresh_token: 'rt2', created_at: Math.floor(Date.now() / 1000), expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      const method = init.method ?? 'GET';
+      requests.push({ url: u, method, body: init.body });
+      if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
+      if (u.includes('/users/clients/3')) {
+        return new Response(JSON.stringify({ response: { result: { client: { id: 3, email: 'billing@client.example' } } } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ response: { result: { invoice: { id: 5, customerid: 3 } } } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    return { requests, client: new FreshbooksClient({ fetchImpl, storePath: '/tmp/fb-tools-test.json' }) };
+  }
+  const writesOf = (r: Array<{ method: string }>) => r.filter((x) => x.method !== 'GET');
+
+  it('update_invoice refuses email_recipients outside the invoice\'s client', async () => {
+    const { requests, client } = invoiceServer();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    const res = await h.callTool('freshbooks_update_invoice', {
+      id: 5,
+      fields: { action_email: true, email_recipients: ['attacker@evil.example'] },
+      confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toMatch(/attacker@evil\.example/);
+    expect(writesOf(requests)).toHaveLength(0);
+    await h.close();
+  });
+
+  it('update_invoice sends to the client\'s own address', async () => {
+    const { requests, client } = invoiceServer();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    const res = await h.callTool('freshbooks_update_invoice', {
+      id: 5,
+      fields: { action_email: true, email_recipients: ['billing@client.example'] },
+      confirm: true,
+    });
+    expect(res.isError).toBeFalsy();
+    expect(writesOf(requests)).toHaveLength(1);
+    await h.close();
+  });
+
+  it('update_invoice allows other recipients only with the explicit flag', async () => {
+    const { requests, client } = invoiceServer();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    await h.callTool('freshbooks_update_invoice', {
+      id: 5,
+      fields: { action_email: true, email_recipients: ['accountant@firm.example'] },
+      allow_non_client_recipients: true,
+      confirm: true,
+    });
+    expect(writesOf(requests)).toHaveLength(1);
+    await h.close();
+  });
+
+  it('create_invoice refuses email_recipients outside the invoiced client', async () => {
+    const { requests, client } = invoiceServer();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    const res = await h.callTool('freshbooks_create_invoice', {
+      customerid: 3,
+      fields: { email_recipients: ['attacker@evil.example'] },
+      confirm: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(writesOf(requests)).toHaveLength(0);
+    await h.close();
+  });
+
+  it('update_invoice is annotated as destructive and open-world', async () => {
+    // The test harness's listTools drops annotations, so capture the registration.
+    const { client } = invoiceServer();
+    const configs = new Map<string, { annotations?: Record<string, unknown> }>();
+    registerInvoicingTools(
+      { registerTool: (name: string, cfg: { annotations?: Record<string, unknown> }) => configs.set(name, cfg) } as never,
+      client,
+    );
+    expect(configs.get('freshbooks_update_invoice')?.annotations).toMatchObject({
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+  });
+});
