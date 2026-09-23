@@ -635,7 +635,7 @@ describe('identity with several business memberships', () => {
       }, `/tmp/fb-multi-null-${Math.random().toString(16).slice(2)}.json`);
     }
 
-    it('refuses every write rather than pairing businessId 222 with the first role account', async () => {
+    it('refuses accounting writes rather than pairing businessId 222 with the first role account', async () => {
       process.env.FRESHBOOKS_BUSINESS_ID = '222';
       const calls: string[] = [];
       const c = nullClient(calls);
@@ -643,16 +643,41 @@ describe('identity with several business memberships', () => {
       expect(id.businessId).toBe(222);
       expect(id.note).toMatch(/account_id/);
       await expect(c.accountingWrite('invoices/invoices', 'invoice', { a: 1 })).rejects.toThrow(/222/);
-      await expect(c.businessWrite('projects', 'projects', 'project', { a: 1 })).rejects.toThrow(/222/);
       expect(calls.filter((x) => !x.startsWith('GET'))).toEqual([]);
     });
 
-    it('still refuses writes when FRESHBOOKS_ACCOUNT_ID is set but cannot be checked against the business', async () => {
+    it('names FRESHBOOKS_ACCOUNT_ID as the way to confirm the pairing', async () => {
       process.env.FRESHBOOKS_BUSINESS_ID = '222';
-      process.env.FRESHBOOKS_ACCOUNT_ID = 'CLIENTACCT';
+      const c = nullClient();
+      const err = await c.accountingWrite('invoices/invoices', 'invoice', { a: 1 }).catch((e) => e);
+      expect(err.hint).toMatch(/FRESHBOOKS_ACCOUNT_ID/);
+    });
+
+    it('still allows project and time-entry writes, which use only the chosen businessId', async () => {
+      process.env.FRESHBOOKS_BUSINESS_ID = '222';
       const calls: string[] = [];
       const c = nullClient(calls);
-      await expect(c.accountingWrite('invoices/invoices', 'invoice', { a: 1 })).rejects.toThrow(/222/);
+      await expect(c.businessWrite('projects', 'projects', 'project', { a: 1 })).resolves.toBeDefined();
+      expect(calls.some((x) => x.startsWith('POST') && x.includes('/projects/business/222/'))).toBe(true);
+    });
+
+    it('honours an explicit FRESHBOOKS_BUSINESS_ID + FRESHBOOKS_ACCOUNT_ID pair set by the operator', async () => {
+      process.env.FRESHBOOKS_BUSINESS_ID = '222';
+      process.env.FRESHBOOKS_ACCOUNT_ID = 'OWNACCT';
+      const calls: string[] = [];
+      const c = nullClient(calls);
+      const id = await c.getIdentity();
+      expect(id).toMatchObject({ accountId: 'OWNACCT', businessId: 222 });
+      expect(id.note).toMatch(/FRESHBOOKS_ACCOUNT_ID/);
+      await expect(c.accountingWrite('invoices/invoices', 'invoice', { a: 1 })).resolves.toBeDefined();
+      expect(calls.some((x) => x.startsWith('POST') && x.includes('/accounting/account/OWNACCT/'))).toBe(true);
+    });
+
+    it('does not treat FRESHBOOKS_ACCOUNT_ID alone as confirming the pairing', async () => {
+      process.env.FRESHBOOKS_ACCOUNT_ID = 'OWNACCT';
+      const calls: string[] = [];
+      const c = nullClient(calls);
+      await expect(c.getIdentity()).rejects.toThrow(/FRESHBOOKS_BUSINESS_ID/);
       expect(calls.filter((x) => !x.startsWith('GET'))).toEqual([]);
     });
   });

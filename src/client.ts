@@ -111,7 +111,15 @@ export class FreshbooksClient {
    * Why writes are refused for the cached identity, or null when they are allowed:
    * the business was guessed among several, or its accountId could not be tied to it.
    */
-  private writeRefusal: { message: string; hint: string } | null = null;
+  /**
+   * Why writes are refused, per family. Projects and time entries use only the
+   * chosen businessId, so an accountId that cannot be tied to that business blocks
+   * accounting writes alone; a business that was guessed rather than chosen blocks both.
+   */
+  private writeRefusal: {
+    accounting: { message: string; hint: string } | null;
+    business: { message: string; hint: string } | null;
+  } = { accounting: null, business: null };
   private readonly fetchImpl: typeof fetch;
   private readonly storePath: string | undefined;
 
@@ -400,7 +408,13 @@ export class FreshbooksClient {
         },
       );
     }
-    const accountUntied = multi && membershipAccountId === null;
+    const accountUnconfirmed = multi && membershipAccountId === null;
+    // FreshBooks gave nothing to check the pairing against, so an explicit
+    // FRESHBOOKS_BUSINESS_ID + FRESHBOOKS_ACCOUNT_ID pair is the operator's own
+    // decision about whose books this is — honour it rather than lock them out.
+    const operatorPaired =
+      accountUnconfirmed && accountOverride !== undefined && businessOverride !== undefined;
+    const accountUntied = accountUnconfirmed && !operatorPaired;
 
     const accountId =
       accountOverride ?? membershipAccountId ?? roleAccountId ?? clientAccountId ?? null;
@@ -443,31 +457,46 @@ export class FreshbooksClient {
           ? {
               note:
                 `FreshBooks returned no account_id for business ${businessId}, so accountId ${accountId} ` +
-                'cannot be confirmed to belong to it and writes are refused. Reads of accounting records ' +
-                'may show another business\'s books.',
+                'cannot be confirmed to belong to it: invoice, expense and other accounting writes are ' +
+                'refused (projects and time entries still work) and reads of accounting records may show ' +
+                "another business's books. FRESHBOOKS_ACCOUNT_ID, given alongside FRESHBOOKS_BUSINESS_ID, " +
+                "confirms this business's accountId.",
             }
-          : {}),
+          : operatorPaired
+            ? {
+                note:
+                  `FreshBooks returned no account_id for business ${businessId}; accountId ${accountId} is ` +
+                  'used because FRESHBOOKS_BUSINESS_ID and FRESHBOOKS_ACCOUNT_ID were both set, and ' +
+                  'FreshBooks could not confirm the pairing.',
+              }
+            : {}),
     };
     const names = summaries.map((b) => `${b.businessId} (${b.name ?? 'unnamed'})`).join(', ');
-    this.writeRefusal = ambiguous
+    const ambiguousRefusal = ambiguous
       ? {
           message:
             `Refusing to write: this identity belongs to several FreshBooks businesses (${names}) and ` +
             'FRESHBOOKS_BUSINESS_ID does not say which one to write to.',
           hint: ownerSetHint('FRESHBOOKS_BUSINESS_ID'),
         }
-      : accountUntied
-        ? {
-            message:
-              `Refusing to write: FreshBooks returned no account_id for business ${businessId}, so accountId ` +
-              `${accountId} cannot be confirmed to belong to it — invoices could land in another business's ` +
-              `books while projects and time entries land in ${businessId}'s. Businesses: ${names}.`,
-            hint:
-              'No setting can confirm this pairing: FRESHBOOKS_ACCOUNT_ID is checked against the ' +
-              "business's own account_id, which FreshBooks did not return. Check freshbooks_get_identity; " +
-              'a business with no account_id has no accounting account this identity can write to.',
-          }
-        : null;
+      : null;
+    this.writeRefusal = {
+      business: ambiguousRefusal,
+      accounting:
+        ambiguousRefusal ??
+        (accountUntied
+          ? {
+              message:
+                `Refusing to write: FreshBooks returned no account_id for business ${businessId}, so accountId ` +
+                `${accountId} cannot be confirmed to belong to it — invoices could land in another business's ` +
+                `books while projects and time entries land in ${businessId}'s. Businesses: ${names}.`,
+              hint:
+                "Confirm the pairing with this business's own accountId, given alongside " +
+                'FRESHBOOKS_BUSINESS_ID. ' +
+                ownerSetHint('FRESHBOOKS_ACCOUNT_ID'),
+            }
+          : null),
+    };
     return this.identityCache;
   }
 
@@ -475,10 +504,14 @@ export class FreshbooksClient {
    * Refuse a write while the business was guessed rather than chosen — creating
    * records in the wrong company's books is not undoable from here.
    */
-  private async identityForWrite(method: string | undefined): Promise<Identity> {
+  private async identityForWrite(
+    method: string | undefined,
+    family: 'accounting' | 'business',
+  ): Promise<Identity> {
     const identity = await this.getIdentity();
-    if (method !== undefined && method !== 'GET' && this.writeRefusal !== null) {
-      throw new McpToolError(this.writeRefusal.message, { hint: this.writeRefusal.hint });
+    const refusal = this.writeRefusal[family];
+    if (method !== undefined && method !== 'GET' && refusal !== null) {
+      throw new McpToolError(refusal.message, { hint: refusal.hint });
     }
     return identity;
   }
@@ -488,7 +521,7 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<Record<string, unknown>> {
-    const { accountId } = await this.identityForWrite(init.method);
+    const { accountId } = await this.identityForWrite(init.method, 'accounting');
     const body = (await this.request(
       `/accounting/account/${accountId}/${path}`,
       init,
@@ -528,7 +561,7 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<Record<string, unknown>> {
-    const { businessId } = await this.identityForWrite(init.method);
+    const { businessId } = await this.identityForWrite(init.method, 'business');
     // `family` IS the URL prefix for all three of these.
     const body = await this.request(`/${family}/business/${businessId}/${path}`, init);
     return (body ?? {}) as Record<string, unknown>;
