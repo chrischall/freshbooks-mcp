@@ -4,6 +4,7 @@ import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
+import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
 
 import { ACCOUNTING_RESOURCES } from "../resources.js";
 
@@ -159,10 +160,11 @@ export function registerInvoicingTools(
           .describe(
             "Additional raw FreshBooks invoice fields, merged into the payload.",
           ),
+        allow_non_client_recipients: schemaAllowNonClientRecipients,
         confirm: schemaConfirm,
       }),
     },
-    async ({ confirm, fields, ...rest }) => {
+    async ({ confirm, fields, allow_non_client_recipients, ...rest }) => {
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
       const gate = previewUnlessConfirmed(
         confirm,
@@ -172,6 +174,9 @@ export function registerInvoicingTools(
         { invoice: payload },
       );
       if (gate) return gate;
+      if (payload.email_recipients !== undefined && allow_non_client_recipients !== true) {
+        await assertClientRecipients(client, payload.customerid, payload.email_recipients, "the new invoice");
+      }
       return minifiedResult(
         await client.accountingWrite(
           RESOURCES.invoices.path,
@@ -188,7 +193,15 @@ export function registerInvoicingTools(
       description:
         "Update an existing invoice. Only the supplied fields are sent. Requires confirm: true to " +
         "execute; without it returns a dry-run preview and makes no network call. Note that changing " +
-        "an invoice out of draft can email it to the client.",
+        "an invoice out of draft can email it to the client. email_recipients in fields must be " +
+        "addresses on the invoice's client record unless allow_non_client_recipients is set, which " +
+        "is only for addresses the user named themselves.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Invoice id"),
         fields: z
@@ -196,18 +209,28 @@ export function registerInvoicingTools(
           .describe(
             'Raw FreshBooks invoice fields to change, e.g. {"notes": "..."}.',
           ),
+        allow_non_client_recipients: schemaAllowNonClientRecipients,
         confirm: schemaConfirm,
       }),
     },
-    async ({ id, fields, confirm }) => {
+    async ({ id, fields, allow_non_client_recipients, confirm }) => {
       const gate = previewUnlessConfirmed(
         confirm,
         `Update FreshBooks invoice ${id}`,
         "PUT",
         `${RESOURCES.invoices.path}/${id}`,
         { invoice: fields },
+        fields.email_recipients === undefined ? {} : { recipients: fields.email_recipients },
       );
       if (gate) return gate;
+      if (fields.email_recipients !== undefined && allow_non_client_recipients !== true) {
+        const invoice = await client.accountingGet(RESOURCES.invoices.path, id, RESOURCES.invoices.single);
+        const customerid =
+          invoice !== null && typeof invoice === "object"
+            ? (invoice as Record<string, unknown>).customerid
+            : undefined;
+        await assertClientRecipients(client, customerid, fields.email_recipients, `invoice ${id}`);
+      }
       return minifiedResult(
         await client.accountingWrite(
           RESOURCES.invoices.path,
