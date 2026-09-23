@@ -36,6 +36,7 @@ FRESHBOOKS_CLIENT_SECRET=...
 FRESHBOOKS_REFRESH_TOKEN=...       # from the bootstrap
 FRESHBOOKS_REDIRECT_URI=https://localhost   # optional; must match what you registered
 FRESHBOOKS_TOKEN_STORE=~/.freshbooks-mcp/session.json   # optional
+FRESHBOOKS_BUSINESS_ID=...         # optional; required for writes if you belong to several businesses
 ```
 
 ### ⚠️ Refresh tokens rotate
