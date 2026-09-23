@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.1...v1.0.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* close auth, business-selection and email-recipient gaps from the Sept 2026 audit ([#79](https://github.com/chrischall/freshbooks-mcp/issues/79)) ([f4e380c](https://github.com/chrischall/freshbooks-mcp/commit/f4e380c6f21499aa6b4c04087733f36715daeab2))
+
+
+### Refactor
+
+* **client:** drop stale duplicate writeRefusal doc comment ([#82](https://github.com/chrischall/freshbooks-mcp/issues/82)) ([dc80091](https://github.com/chrischall/freshbooks-mcp/commit/dc80091707aca855a20f7c4eed89efe0a68f54a9))
+
 ## [1.0.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.0...v1.0.1) (2026-09-23)
 
 
