@@ -108,10 +108,6 @@ export class FreshbooksClient {
   private tokenManager: TokenManager | null = null;
   private identityCache: Identity | null = null;
   /**
-   * Why writes are refused for the cached identity, or null when they are allowed:
-   * the business was guessed among several, or its accountId could not be tied to it.
-   */
-  /**
    * Why writes are refused, per family. Projects and time entries use only the
    * chosen businessId, so an accountId that cannot be tied to that business blocks
    * accounting writes alone; a business that was guessed rather than chosen blocks both.
