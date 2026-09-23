@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.0...v1.0.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 17.4.2 to 18.0.1 ([#77](https://github.com/chrischall/freshbooks-mcp/issues/77)) ([2d8b7f6](https://github.com/chrischall/freshbooks-mcp/commit/2d8b7f69e3a955876343808589cd3a4de6646aa8))
+* **deps:** require zod ^4.6.5 to match @chrischall/mcp-utils 2.4.0 ([#78](https://github.com/chrischall/freshbooks-mcp/issues/78)) ([c31e46a](https://github.com/chrischall/freshbooks-mcp/commit/c31e46a53a5185d80d0f0cd1a25e6d436857f5fd))
+* **deps:** upgrade @chrischall/mcp-utils to 2.4.0 and @fetchproxy/* to 3.2.0 ([#73](https://github.com/chrischall/freshbooks-mcp/issues/73)) ([3f4ea43](https://github.com/chrischall/freshbooks-mcp/commit/3f4ea43c5fb51fc7c52372ff2b92e708eca23f6d))
+
 ## [1.0.0](https://github.com/chrischall/freshbooks-mcp/compare/v0.7.0...v1.0.0) (2026-09-20)
 
 
