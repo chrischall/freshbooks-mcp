@@ -225,7 +225,12 @@ export function registerInvoicingTools(
         path: `${RESOURCES.invoices.path}/${id}`,
         body: { invoice: fields },
         target: id,
-        highlights: fields.email_recipients === undefined ? {} : { recipients: fields.email_recipients },
+        highlights: {
+          ...(fields.email_recipients === undefined ? {} : { recipients: fields.email_recipients }),
+          ...(allow_non_client_recipients === true
+            ? { warning: "allow_non_client_recipients is set: recipients will NOT be checked against the client." }
+            : {}),
+        },
         options: { allow_non_client_recipients: allow_non_client_recipients === true },
         confirmToken,
       });
