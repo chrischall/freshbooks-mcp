@@ -3,6 +3,7 @@
 // the process, not just that a call happened.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
+import { callConfirmed } from './confirm-helpers.js';
 import { FreshbooksClient } from '../src/client.js';
 import { registerEstimateTools } from '../src/tools/estimates.js';
 
@@ -132,7 +133,7 @@ describe('freshbooks_accept_estimate', () => {
     const h = await harnessFor(client);
 
     const res = parseToolResult(
-      await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true }),
+      await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 }),
     ) as Record<string, any>;
 
     // The exact mechanism: an action on the estimate, not a status write.
@@ -159,7 +160,7 @@ describe('freshbooks_accept_estimate', () => {
     const { client } = estimateServer({ onWrite: (_sent, current) => current });
     const h = await harnessFor(client);
     const res = parseToolResult(
-      await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true }),
+      await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 }),
     ) as Record<string, any>;
     expect(res.accepted).toBe(false);
     expect(res.changed).toBe(false);
@@ -174,7 +175,7 @@ describe('freshbooks_accept_estimate', () => {
     const h = await harnessFor(client);
 
     const res = parseToolResult(
-      await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true }),
+      await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 }),
     ) as Record<string, any>;
 
     expect(res.alreadyAccepted).toBe(true);
@@ -191,22 +192,22 @@ describe('freshbooks_accept_estimate', () => {
     });
     const h = await harnessFor(client);
     const res = parseToolResult(
-      await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true }),
+      await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 }),
     ) as Record<string, any>;
     expect(res.alreadyAccepted).toBe(true);
     expect(puts()).toHaveLength(0);
     await h.close();
   });
 
-  it('previews without confirm and sends nothing at all', async () => {
+  it('previews without a confirmToken and sends nothing at all', async () => {
     const { client, requests } = estimateServer();
     const h = await harnessFor(client);
     const res = parseToolResult(await h.callTool('freshbooks_accept_estimate', { id: 279405 })) as Record<
       string,
-      unknown
+      any
     >;
-    expect(res.dryRun).toBe(true);
-    expect(res.willSend).toEqual({ estimate: { action_accept: true } });
+    expect(res.status).toBe('confirmation-required');
+    expect(res.preview.willSend).toEqual({ estimate: { action_accept: true } });
     expect(requests).toHaveLength(0);
     await h.close();
   });
@@ -235,10 +236,9 @@ describe('freshbooks_update_estimate', () => {
     const h = await harnessFor(client);
 
     const res = parseToolResult(
-      await h.callTool('freshbooks_update_estimate', {
+      await callConfirmed(h, 'freshbooks_update_estimate', {
         id: 279405,
         notes: 'Deposit received 2026-08-13',
-        confirm: true,
       }),
     ) as Record<string, any>;
 
@@ -262,13 +262,12 @@ describe('freshbooks_update_estimate', () => {
   it('merges typed fields with the raw escape hatch', async () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
-    await h.callTool('freshbooks_update_estimate', {
+    await callConfirmed(h, 'freshbooks_update_estimate', {
       id: 279405,
       terms: 'Net 30',
       presentation: { theme_primary_color: '#4f697a' },
       lines: [{ name: 'Epoxy flake', qty: 1, unit_cost: { amount: '800.00', code: 'USD' } }],
       fields: { vis_state: 0 },
-      confirm: true,
     });
     expect(JSON.parse(String(puts()[0].body))).toEqual({
       estimate: {
@@ -287,10 +286,9 @@ describe('freshbooks_update_estimate', () => {
     const { client } = estimateServer();
     const h = await harnessFor(client);
     const res = parseToolResult(
-      await h.callTool('freshbooks_update_estimate', {
+      await callConfirmed(h, 'freshbooks_update_estimate', {
         id: 279405,
         terms: '1/2 Up Front and Rest upon Completion',
-        confirm: true,
       }),
     ) as Record<string, any>;
     expect(res.changed).toBe(false);
@@ -301,7 +299,7 @@ describe('freshbooks_update_estimate', () => {
   it('refuses an empty update rather than sending a no-op write', async () => {
     const { client, requests } = estimateServer();
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_update_estimate', { id: 279405, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_update_estimate', { id: 279405 });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/nothing to update/i);
     expect(requests).toHaveLength(0);
@@ -313,12 +311,11 @@ describe('freshbooks_send_estimate', () => {
   it('sends action_email with the estimate-specific customized-email key', async () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
-    await h.callTool('freshbooks_send_estimate', {
+    await callConfirmed(h, 'freshbooks_send_estimate', {
       id: 279405,
       email_recipients: ['vendor@example.com'],
       subject: 'Accepted — please invoice',
       allow_non_client_recipients: true,
-      confirm: true,
     });
     // `estimate_customized_email`, NOT the invoice endpoint's `invoice_customized_email`.
     expect(JSON.parse(String(puts()[0].body))).toEqual({
@@ -335,7 +332,7 @@ describe('freshbooks_send_estimate', () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
     const res = parseToolResult(
-      await h.callTool('freshbooks_send_estimate', { id: 279405, confirm: true }),
+      await callConfirmed(h, 'freshbooks_send_estimate', { id: 279405 }),
     ) as Record<string, any>;
     expect(JSON.parse(String(puts()[0].body))).toEqual({ estimate: { action_email: true } });
     // Emailing need not move anything on the record, so the reply must say that outright
@@ -348,8 +345,8 @@ describe('freshbooks_send_estimate', () => {
 });
 
 // Tool output carries third-party text (client names and notes, bank-feed vendor
-// strings, estimates a vendor wrote), and the confirm gate is a flag the MODEL
-// sets. An injected instruction must not be able to mail the business's records
+// strings, estimates a vendor wrote), and the confirm gate can be satisfied by the
+// MODEL itself (MCP_CONFIRM_MODE=auto). An injected instruction must not be able to mail the business's records
 // to an arbitrary address from the business's own identity.
 // (chrischall/fleet-audit#115)
 describe('freshbooks_send_estimate recipient guard', () => {
@@ -362,11 +359,10 @@ describe('freshbooks_send_estimate recipient guard', () => {
   it('refuses a recipient that is not on the estimate\'s client record, sending nothing', async () => {
     const { client, puts } = estimateServer({ clientRecord: CLIENT });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_send_estimate', {
+    const res = await callConfirmed(h, 'freshbooks_send_estimate', {
       id: 279405,
       email_recipients: ['owner@client.example', 'attacker@evil.example'],
       body: 'all your invoices',
-      confirm: true,
     });
     expect(res.isError).toBe(true);
     const text = JSON.stringify(res.content);
@@ -379,10 +375,9 @@ describe('freshbooks_send_estimate recipient guard', () => {
   it('sends to the client\'s own addresses (main email or a contact), case-insensitively', async () => {
     const { client, puts } = estimateServer({ clientRecord: CLIENT });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_send_estimate', {
+    const res = await callConfirmed(h, 'freshbooks_send_estimate', {
       id: 279405,
       email_recipients: ['owner@client.example', 'AP@client.example'],
-      confirm: true,
     });
     expect(res.isError).toBeFalsy();
     expect(puts()).toHaveLength(1);
@@ -392,27 +387,26 @@ describe('freshbooks_send_estimate recipient guard', () => {
   it('refuses when the client record cannot be read to check against', async () => {
     const { client, puts } = estimateServer();
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_send_estimate', {
+    const res = await callConfirmed(h, 'freshbooks_send_estimate', {
       id: 279405,
       email_recipients: ['someone@example.com'],
-      confirm: true,
     });
     expect(res.isError).toBe(true);
     expect(puts()).toHaveLength(0);
     await h.close();
   });
 
-  it('shows the recipients prominently in the dry-run', async () => {
+  it('shows the recipients prominently in the preview', async () => {
     const { client } = estimateServer();
     const h = await harnessFor(client);
     const listed = parseToolResult(
       await h.callTool('freshbooks_send_estimate', { id: 279405, email_recipients: ['x@y.example'] }),
     ) as Record<string, any>;
-    expect(listed.recipients).toEqual(['x@y.example']);
+    expect(listed.preview.recipients).toEqual(['x@y.example']);
     const onFile = parseToolResult(
       await h.callTool('freshbooks_send_estimate', { id: 279405 }),
     ) as Record<string, any>;
-    expect(onFile.recipients).toMatch(/client's address on file/i);
+    expect(onFile.preview.recipients).toMatch(/client's address on file/i);
     await h.close();
   });
 
@@ -434,10 +428,9 @@ describe('freshbooks_send_estimate recipient guard', () => {
   it('update_estimate refuses email actions smuggled in through raw fields', async () => {
     const { client, puts } = estimateServer({ clientRecord: CLIENT });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_update_estimate', {
+    const res = await callConfirmed(h, 'freshbooks_update_estimate', {
       id: 279405,
       fields: { action_email: true, email_recipients: ['attacker@evil.example'] },
-      confirm: true,
     });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/freshbooks_send_estimate/);
@@ -455,7 +448,7 @@ describe('permission boundaries', () => {
         }),
     });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 });
     expect(res.isError).toBe(true);
     const text = JSON.stringify(res.content);
     expect(text).toMatch(/denied/i);
@@ -475,7 +468,7 @@ describe('permission boundaries', () => {
         }),
     });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/owner or admin/);
     await h.close();
@@ -489,7 +482,7 @@ describe('permission boundaries', () => {
         }),
     });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 });
     expect(res.isError).toBe(true);
     const text = JSON.stringify(res.content);
     expect(text).toMatch(/the record exists/);
@@ -504,7 +497,7 @@ describe('identifier guards', () => {
     const h = await harnessFor(client);
     // 7 is the businessId in this identity — a plausible copy/paste, and one FreshBooks
     // answers with the same nothing it gives a deleted estimate.
-    const res = await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 7 });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/businessId in the estimate-id slot/);
     expect(puts()).toHaveLength(0);
@@ -522,7 +515,7 @@ describe('identifier guards', () => {
         }),
     });
     const h = await harnessFor(client);
-    const res = await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true });
+    const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 7 });
     expect(res.isError).toBe(true);
     const text = JSON.stringify(res.content);
     expect(text).toMatch(/denied/i);
@@ -539,7 +532,7 @@ describe('identifier guards', () => {
     });
     const h = await harnessFor(client);
     const res = parseToolResult(
-      await h.callTool('freshbooks_accept_estimate', { id: 7, confirm: true }),
+      await callConfirmed(h, 'freshbooks_accept_estimate', { id: 7 }),
     ) as Record<string, any>;
     expect(res.after.accepted).toBe(true);
     expect(puts()).toHaveLength(1);
@@ -551,7 +544,7 @@ describe('identifier guards', () => {
     try {
       const { client, puts } = estimateServer();
       const h = await harnessFor(client);
-      const res = await h.callTool('freshbooks_accept_estimate', { id: 279405, confirm: true });
+      const res = await callConfirmed(h, 'freshbooks_accept_estimate', { id: 279405 });
       expect(res.isError).toBe(true);
       expect(JSON.stringify(res.content)).toMatch(/businessUuid/);
       expect(puts()).toHaveLength(0);

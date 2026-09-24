@@ -8,7 +8,8 @@ import { ACCOUNTING_RESOURCES } from "../resources.js";
  *
  * Tool output is full of text third parties wrote — client names and notes,
  * bank-feed vendor strings, estimates a vendor addressed to this identity — and
- * the confirm gate is a flag the MODEL sets, not a human prompt. So an injected
+ * the confirm gate can be satisfied by the MODEL itself (MCP_CONFIRM_MODE=auto, or a
+ * user who approves a preview without reading it). So an injected
  * instruction could otherwise have FreshBooks email the business's records to
  * any address, from the business's own identity. By default recipients must be
  * addresses already on the record's client; anything else needs an explicit
