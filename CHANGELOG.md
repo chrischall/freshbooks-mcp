@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.2...v1.1.0) (2026-09-24)
+
+
+### Features
+
+* confirm writes with a preview token instead of confirm: true ([#83](https://github.com/chrischall/freshbooks-mcp/issues/83)) ([ce35943](https://github.com/chrischall/freshbooks-mcp/commit/ce3594348f4e3417cd4e44b697a8f013d0b66f90))
+
+
+### Bug Fixes
+
+* **invoicing:** warn in the update_invoice preview when recipients go unchecked ([#86](https://github.com/chrischall/freshbooks-mcp/issues/86)) ([2cb2855](https://github.com/chrischall/freshbooks-mcp/commit/2cb2855253d83dbc2aedc56923fa6b1230ba96d7))
+
 ## [1.0.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.1...v1.0.2) (2026-09-23)
 
 
