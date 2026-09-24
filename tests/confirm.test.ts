@@ -159,6 +159,35 @@ describe('confirm token flow (client cannot be prompted)', () => {
     await h.close();
   });
 
+  it('update_invoice preview names the recipients and the unchecked-recipient warning', async () => {
+    const { client } = server();
+    const h = await harness(client);
+    const first = parseToolResult(
+      await h.callTool('freshbooks_update_invoice', {
+        id: 5,
+        fields: { email_recipients: ['a@x.example'] },
+        allow_non_client_recipients: true,
+      }),
+    ) as Record<string, any>;
+    expect(first.preview.recipients).toEqual(['a@x.example']);
+    expect(first.preview.warning).toMatch(/NOT be checked/);
+    await h.close();
+  });
+
+  it('update_invoice preview carries no warning when recipients are checked', async () => {
+    const { client } = server();
+    const h = await harness(client);
+    const first = parseToolResult(
+      await h.callTool('freshbooks_update_invoice', {
+        id: 5,
+        fields: { email_recipients: ['a@x.example'] },
+      }),
+    ) as Record<string, any>;
+    expect(first.preview.recipients).toEqual(['a@x.example']);
+    expect(first.preview.warning).toBeUndefined();
+    await h.close();
+  });
+
   it('refuses a replayed token with TOKEN_REUSED and writes nothing more', async () => {
     const { writes, client } = server();
     const h = await harness(client);
