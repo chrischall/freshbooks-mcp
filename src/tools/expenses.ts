@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
-import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
+import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 
 const money = z
   .object({
@@ -88,8 +88,7 @@ export function registerExpenseTools(
     "freshbooks_create_expense",
     {
       description:
-        "Record an expense. Requires confirm: true to execute; without it returns a dry-run " +
-        "preview and makes no network call.",
+        "Record an expense. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         amount: money,
         date: z.string().optional().describe("Expense date, YYYY-MM-DD"),
@@ -117,25 +116,25 @@ export function registerExpenseTools(
           .describe(
             "Additional raw FreshBooks expense fields, merged into the payload.",
           ),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, fields, ...rest }) => {
+    async ({ confirmToken, fields, ...rest }, ctx) => {
       const payload = {
         ...Object.fromEntries(
           Object.entries(rest).filter(([, v]) => v !== undefined),
         ),
         ...(fields ?? {}),
       };
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Create FreshBooks expense",
-        "POST",
-        R.expenses.path,
-        {
-          expense: payload,
-        },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_create_expense",
+        action: "expense.create",
+        summary: "Create FreshBooks expense",
+        method: "POST",
+        path: R.expenses.path,
+        body: { expense: payload },
+        confirmToken,
+      });
       if (gate) return gate;
       return minifiedResult(
         await client.accountingWrite(

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
+import { callConfirmed } from './confirm-helpers.js';
 import { FreshbooksClient } from '../src/client.js';
 import { registerAccountTools } from '../src/tools/account.js';
 import { registerAuthTools } from '../src/tools/auth.js';
@@ -95,7 +96,7 @@ describe('confirm gate', () => {
     ['freshbooks_create_time_entry', { duration: 3600, started_at: '2026-08-12T09:00:00Z' }],
   ];
 
-  it.each(writes)('%s sends NO request without confirm', async (tool, args) => {
+  it.each(writes)('%s sends NO request without a confirmToken', async (tool, args) => {
     // The property that matters is that nothing left the process — asserting only
     // that a preview came back would pass even if the write had also fired.
     const { requests, client } = trackedClient();
@@ -106,15 +107,15 @@ describe('confirm gate', () => {
       registerProjectTools(s, client);
     });
     const res = parseToolResult(await h.callTool(tool, args)) as Record<string, unknown>;
-    expect(res.dryRun).toBe(true);
+    expect(res.status).toBe('confirmation-required');
     expect(requests).toHaveLength(0);
     await h.close();
   });
 
-  it('sends the write once confirm is true, wrapped in the singular resource key', async () => {
+  it('sends the write once confirmed, wrapped in the singular resource key', async () => {
     const { requests, client } = trackedClient();
     const h = await createTestHarness((s) => registerInvoicingTools(s, client));
-    await h.callTool('freshbooks_create_invoice', { customerid: 1, confirm: true });
+    await callConfirmed(h, 'freshbooks_create_invoice', { customerid: 1 });
 
     const write = requests.find((r) => r.method === 'POST');
     expect(write?.url).toContain('/accounting/account/acct/invoices/invoices');
@@ -213,10 +214,9 @@ describe('invoice recipient guard', () => {
   it('update_invoice refuses email_recipients outside the invoice\'s client', async () => {
     const { requests, client } = invoiceServer();
     const h = await createTestHarness((s) => registerInvoicingTools(s, client));
-    const res = await h.callTool('freshbooks_update_invoice', {
+    const res = await callConfirmed(h, 'freshbooks_update_invoice', {
       id: 5,
       fields: { action_email: true, email_recipients: ['attacker@evil.example'] },
-      confirm: true,
     });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toMatch(/attacker@evil\.example/);
@@ -227,10 +227,9 @@ describe('invoice recipient guard', () => {
   it('update_invoice sends to the client\'s own address', async () => {
     const { requests, client } = invoiceServer();
     const h = await createTestHarness((s) => registerInvoicingTools(s, client));
-    const res = await h.callTool('freshbooks_update_invoice', {
+    const res = await callConfirmed(h, 'freshbooks_update_invoice', {
       id: 5,
       fields: { action_email: true, email_recipients: ['billing@client.example'] },
-      confirm: true,
     });
     expect(res.isError).toBeFalsy();
     expect(writesOf(requests)).toHaveLength(1);
@@ -240,11 +239,10 @@ describe('invoice recipient guard', () => {
   it('update_invoice allows other recipients only with the explicit flag', async () => {
     const { requests, client } = invoiceServer();
     const h = await createTestHarness((s) => registerInvoicingTools(s, client));
-    await h.callTool('freshbooks_update_invoice', {
+    await callConfirmed(h, 'freshbooks_update_invoice', {
       id: 5,
       fields: { action_email: true, email_recipients: ['accountant@firm.example'] },
       allow_non_client_recipients: true,
-      confirm: true,
     });
     expect(writesOf(requests)).toHaveLength(1);
     await h.close();
@@ -253,10 +251,9 @@ describe('invoice recipient guard', () => {
   it('create_invoice refuses email_recipients outside the invoiced client', async () => {
     const { requests, client } = invoiceServer();
     const h = await createTestHarness((s) => registerInvoicingTools(s, client));
-    const res = await h.callTool('freshbooks_create_invoice', {
+    const res = await callConfirmed(h, 'freshbooks_create_invoice', {
       customerid: 3,
       fields: { email_recipients: ['attacker@evil.example'] },
-      confirm: true,
     });
     expect(res.isError).toBe(true);
     expect(writesOf(requests)).toHaveLength(0);

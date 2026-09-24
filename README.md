@@ -75,26 +75,39 @@ adopted, so re-bootstrapping is the supported recovery path.
 | `freshbooks_list_estimates` / `freshbooks_get_estimate` | Browse and fetch estimates |
 | `freshbooks_list_payments` / `freshbooks_get_payment` | Browse and fetch payments |
 | `freshbooks_list_items` / `freshbooks_get_item` | Browse and fetch catalogue items |
-| `freshbooks_create_client` | Create a client — confirm-gated |
-| `freshbooks_create_invoice` | Create an invoice — confirm-gated |
-| `freshbooks_update_invoice` | Update an invoice — confirm-gated |
-| `freshbooks_record_payment` | Record a payment against an invoice — confirm-gated |
-| `freshbooks_accept_estimate` | Accept an estimate (`action_accept`) — confirm-gated, idempotent |
-| `freshbooks_update_estimate` | Update an estimate's lines, notes, terms, presentation — confirm-gated |
-| `freshbooks_send_estimate` | Email an estimate to the client (`action_email`) — confirm-gated |
+| `freshbooks_create_client` | Create a client — confirmation-gated |
+| `freshbooks_create_invoice` | Create an invoice — confirmation-gated |
+| `freshbooks_update_invoice` | Update an invoice — confirmation-gated |
+| `freshbooks_record_payment` | Record a payment against an invoice — confirmation-gated |
+| `freshbooks_accept_estimate` | Accept an estimate (`action_accept`) — confirmation-gated, idempotent |
+| `freshbooks_update_estimate` | Update an estimate's lines, notes, terms, presentation — confirmation-gated |
+| `freshbooks_send_estimate` | Email an estimate to the client (`action_email`) — confirmation-gated |
 | `freshbooks_decline_estimate` | Always fails: FreshBooks has no decline. Answers with the alternatives |
 | `freshbooks_list_expenses` / `freshbooks_get_expense` | Browse and fetch expenses |
 | `freshbooks_list_expense_categories` | Categories supplying `categoryid` for new expenses |
-| `freshbooks_create_expense` | Record an expense — confirm-gated |
+| `freshbooks_create_expense` | Record an expense — confirmation-gated |
 | `freshbooks_list_projects` / `freshbooks_get_project` | Projects (businessId-keyed) |
-| `freshbooks_create_project` | Create a project — confirm-gated |
+| `freshbooks_create_project` | Create a project — confirmation-gated |
 | `freshbooks_list_time_entries` | Tracked time, with `total_logged` / `total_unbilled` |
-| `freshbooks_create_time_entry` | Log time in seconds — confirm-gated |
+| `freshbooks_create_time_entry` | Log time in seconds — confirmation-gated |
 | `freshbooks_list_services` | Billable work types for projects and time entries |
 | `freshbooks_list_records` / `freshbooks_get_record` | Generic accessor for the accounting long tail (taxes, credit notes, invoice profiles, tasks, staff, gateways, bills, bill vendors, bill payments, other income) |
 
-**Confirm-gated** means the tool makes *no* network call unless `confirm: true` is passed;
-without it you get a dry-run preview of exactly what would be sent.
+**Confirmation-gated** means the tool asks you before it writes. A client that can show a
+confirmation prompt (Claude Code) shows one with exactly what would be sent. Elsewhere
+(claude.ai, Claude Desktop) the first call makes *no* network call and returns a preview of
+the method, path and body that would be sent, plus a single-use `confirmToken`; only a
+repeat call with that token and the same arguments performs the write. A token is refused
+if any argument changed since the preview (`DRAFT_CHANGED`), if it was already used
+(`TOKEN_REUSED`) or once it expires.
+
+### Confirmations
+
+| variable | default | |
+|---|---|---|
+| `MCP_CONFIRM_MODE` | `ask-user` | What a write does on a client that cannot show a confirmation prompt (claude.ai, Claude Desktop). `ask-user`: two steps — the first call does nothing and returns a preview plus a token, and the model must get your approval in chat before calling again with it. `auto`: the same two steps, but the model may use the token after reviewing the preview itself. `refuse`: writes are refused on such clients. A client that can show prompts (Claude Code) always gets the real prompt. An unrecognised value is treated as `refuse`. |
+| `MCP_CONFIRM_TTL_SECONDS` | `600` | How long a token stays valid. |
+| `MCP_CONFIRM_SECRET` | random per process | Signing key; set it only if tokens must survive a server restart. |
 
 ### Estimate writes
 

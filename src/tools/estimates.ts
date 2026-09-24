@@ -4,7 +4,7 @@ import { McpToolError, minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { WrongIdentifierError } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
-import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
+import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
 import {
   EMAIL_FIELD_KEYS,
@@ -54,9 +54,9 @@ export function registerEstimateTools(
       description:
         "Accept an estimate on behalf of the account, by sending FreshBooks' action_accept on " +
         'the estimate (PUT estimates/estimates/{id} with {"estimate": {"action_accept": true}}). ' +
-        "Acceptance is not reversible through the API — there is no un-accept action — so this " +
-        "requires confirm: true to execute; without it returns a dry-run preview and makes no " +
-        "network call. Idempotent: an estimate already accepted or invoiced is returned unchanged " +
+        "Acceptance is not reversible through the API — there is no un-accept action. " +
+        CONFIRM_DESCRIPTION +
+        " Idempotent: an estimate already accepted or invoiced is returned unchanged " +
         "with changed: false and no write is sent. Returns the re-fetched estimate.",
       inputSchema: z.object({
         id: z
@@ -64,17 +64,20 @@ export function registerEstimateTools(
           .int()
           .positive()
           .describe("Estimate id (see freshbooks_list_estimates)"),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, confirm }) => {
-      const gate = previewUnlessConfirmed(
-        confirm,
-        `Accept FreshBooks estimate ${id}`,
-        "PUT",
-        `${EST.path}/${id}`,
-        { estimate: { action_accept: true } },
-      );
+    async ({ id, confirmToken }, ctx) => {
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_accept_estimate",
+        action: "estimate.accept",
+        summary: `Accept FreshBooks estimate ${id}`,
+        method: "PUT",
+        path: `${EST.path}/${id}`,
+        body: { estimate: { action_accept: true } },
+        target: id,
+        confirmToken,
+      });
       if (gate) return gate;
 
       await assertAccountIdShape(client);
@@ -123,9 +126,10 @@ export function registerEstimateTools(
         "action_accept in FreshBooks' own API collection, and there is no estimate.decline webhook " +
         "event. The tool exists so this answers with the reason instead of a plausible-looking write " +
         "that changes nothing. Call it to get the alternatives.",
-      // No `confirm` parameter, deliberately: everywhere else in this server `confirm`
+      // No `confirmToken` parameter, deliberately: everywhere else in this server it
       // means "an executable write, behind a gate", so offering it here would invite a
-      // retry with confirm: true in the belief that decline exists and is merely gated.
+      // retry through the confirmation flow in the belief that decline exists and is
+      // merely gated.
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
       }),
@@ -157,8 +161,9 @@ export function registerEstimateTools(
     {
       description:
         "Update an existing estimate. Only the supplied fields are sent; anything omitted is left " +
-        "alone. Requires confirm: true to execute; without it returns a dry-run preview and makes " +
-        "no network call. Supplying lines REPLACES the whole line set — include each existing " +
+        "alone. " +
+        CONFIRM_DESCRIPTION +
+        " Supplying lines REPLACES the whole line set — include each existing " +
         "line's lineid to keep it. Returns the re-fetched estimate.",
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
@@ -211,10 +216,10 @@ export function registerEstimateTools(
             "Additional raw FreshBooks estimate fields, merged into the payload — e.g. " +
               '{"vis_state": 1} to soft-delete. Field names are not validated.',
           ),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, confirm, fields, ...rest }) => {
+    async ({ id, confirmToken, fields, ...rest }, ctx) => {
       // Sending mail is freshbooks_send_estimate's job, where the recipients are
       // checked against the client. Letting raw fields do it would bypass that.
       const emailKeys = Object.keys(fields ?? {}).filter((k) =>
@@ -237,13 +242,16 @@ export function registerEstimateTools(
           },
         );
       }
-      const gate = previewUnlessConfirmed(
-        confirm,
-        `Update FreshBooks estimate ${id}`,
-        "PUT",
-        `${EST.path}/${id}`,
-        { estimate: payload },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_update_estimate",
+        action: "estimate.update",
+        summary: `Update FreshBooks estimate ${id}`,
+        method: "PUT",
+        path: `${EST.path}/${id}`,
+        body: { estimate: payload },
+        target: id,
+        confirmToken,
+      });
       if (gate) return gate;
 
       await assertAccountIdShape(client);
@@ -265,8 +273,9 @@ export function registerEstimateTools(
       description:
         "Email an estimate to the client, by sending FreshBooks' action_email on the estimate " +
         '(PUT estimates/estimates/{id} with {"estimate": {"action_email": true, …}}). This puts ' +
-        "mail in a client's inbox, so it requires confirm: true to execute; without it returns a " +
-        "dry-run preview and makes no network call. Omitting email_recipients lets FreshBooks use " +
+        "mail in a client's inbox. " +
+        CONFIRM_DESCRIPTION +
+        " Omitting email_recipients lets FreshBooks use " +
         "the client's own address. email_recipients must be addresses on the estimate's client " +
         "record unless allow_non_client_recipients is set, which is only for addresses the user " +
         "named themselves. Returns the re-fetched estimate.",
@@ -287,10 +296,10 @@ export function registerEstimateTools(
         subject: z.string().optional().describe("Custom email subject"),
         body: z.string().optional().describe("Custom email body"),
         allow_non_client_recipients: schemaAllowNonClientRecipients,
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, email_recipients, subject, body, allow_non_client_recipients, confirm }) => {
+    async ({ id, email_recipients, subject, body, allow_non_client_recipients, confirmToken }, ctx) => {
       const customized = stripUndefined({ subject, body });
       const payload: Record<string, unknown> = {
         action_email: true,
@@ -301,19 +310,23 @@ export function registerEstimateTools(
           ? { estimate_customized_email: customized }
           : {}),
       };
-      const gate = previewUnlessConfirmed(
-        confirm,
-        `Email FreshBooks estimate ${id} to the client`,
-        "PUT",
-        `${EST.path}/${id}`,
-        { estimate: payload },
-        {
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_send_estimate",
+        action: "estimate.send",
+        summary: `Email FreshBooks estimate ${id} to the client`,
+        method: "PUT",
+        path: `${EST.path}/${id}`,
+        body: { estimate: payload },
+        target: id,
+        highlights: {
           recipients: email_recipients ?? "the client's address on file",
           ...(allow_non_client_recipients === true
             ? { warning: "allow_non_client_recipients is set: recipients will NOT be checked against the client." }
             : {}),
         },
-      );
+        options: { allow_non_client_recipients: allow_non_client_recipients === true },
+        confirmToken,
+      });
       if (gate) return gate;
 
       await assertAccountIdShape(client);

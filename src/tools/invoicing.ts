@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
-import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
+import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
 import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
 
@@ -81,13 +81,12 @@ export function registerInvoicingTools(
     );
   }
 
-  // ---- Writes (confirm-gated) -------------------------------------------
+  // ---- Writes (confirmation-gated) -------------------------------------------
   server.registerTool(
     "freshbooks_create_client",
     {
       description:
-        "Create a client (customer) in FreshBooks. Requires confirm: true to execute; without it " +
-        "returns a dry-run preview and makes no network call.",
+        "Create a client (customer) in FreshBooks. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         email: z.string().optional().describe("Client's email address"),
         fname: z.string().optional().describe("First name"),
@@ -106,18 +105,20 @@ export function registerInvoicingTools(
           .describe(
             "Additional raw FreshBooks client fields, merged into the payload.",
           ),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, fields, ...rest }) => {
+    async ({ confirmToken, fields, ...rest }, ctx) => {
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Create FreshBooks client",
-        "POST",
-        RESOURCES.clients.path,
-        { client: payload },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_create_client",
+        action: "client.create",
+        summary: "Create FreshBooks client",
+        method: "POST",
+        path: RESOURCES.clients.path,
+        body: { client: payload },
+        confirmToken,
+      });
       if (gate) return gate;
       return minifiedResult(
         await client.accountingWrite(
@@ -133,8 +134,7 @@ export function registerInvoicingTools(
     "freshbooks_create_invoice",
     {
       description:
-        "Create an invoice for a client. Created invoices start as drafts. Requires confirm: true " +
-        "to execute; without it returns a dry-run preview and makes no network call.",
+        "Create an invoice for a client. Created invoices start as drafts. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         customerid: z
           .number()
@@ -161,18 +161,21 @@ export function registerInvoicingTools(
             "Additional raw FreshBooks invoice fields, merged into the payload.",
           ),
         allow_non_client_recipients: schemaAllowNonClientRecipients,
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, fields, allow_non_client_recipients, ...rest }) => {
+    async ({ confirmToken, fields, allow_non_client_recipients, ...rest }, ctx) => {
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Create FreshBooks invoice",
-        "POST",
-        RESOURCES.invoices.path,
-        { invoice: payload },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_create_invoice",
+        action: "invoice.create",
+        summary: "Create FreshBooks invoice",
+        method: "POST",
+        path: RESOURCES.invoices.path,
+        body: { invoice: payload },
+        options: { allow_non_client_recipients: allow_non_client_recipients === true },
+        confirmToken,
+      });
       if (gate) return gate;
       if (payload.email_recipients !== undefined && allow_non_client_recipients !== true) {
         await assertClientRecipients(client, payload.customerid, payload.email_recipients, "the new invoice");
@@ -191,8 +194,8 @@ export function registerInvoicingTools(
     "freshbooks_update_invoice",
     {
       description:
-        "Update an existing invoice. Only the supplied fields are sent. Requires confirm: true to " +
-        "execute; without it returns a dry-run preview and makes no network call. Note that changing " +
+        "Update an existing invoice. Only the supplied fields are sent. " + CONFIRM_DESCRIPTION +
+        " Note that changing " +
         "an invoice out of draft can email it to the client. email_recipients in fields must be " +
         "addresses on the invoice's client record unless allow_non_client_recipients is set, which " +
         "is only for addresses the user named themselves.",
@@ -210,18 +213,22 @@ export function registerInvoicingTools(
             'Raw FreshBooks invoice fields to change, e.g. {"notes": "..."}.',
           ),
         allow_non_client_recipients: schemaAllowNonClientRecipients,
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, fields, allow_non_client_recipients, confirm }) => {
-      const gate = previewUnlessConfirmed(
-        confirm,
-        `Update FreshBooks invoice ${id}`,
-        "PUT",
-        `${RESOURCES.invoices.path}/${id}`,
-        { invoice: fields },
-        fields.email_recipients === undefined ? {} : { recipients: fields.email_recipients },
-      );
+    async ({ id, fields, allow_non_client_recipients, confirmToken }, ctx) => {
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_update_invoice",
+        action: "invoice.update",
+        summary: `Update FreshBooks invoice ${id}`,
+        method: "PUT",
+        path: `${RESOURCES.invoices.path}/${id}`,
+        body: { invoice: fields },
+        target: id,
+        highlights: fields.email_recipients === undefined ? {} : { recipients: fields.email_recipients },
+        options: { allow_non_client_recipients: allow_non_client_recipients === true },
+        confirmToken,
+      });
       if (gate) return gate;
       if (fields.email_recipients !== undefined && allow_non_client_recipients !== true) {
         const invoice = await client.accountingGet(RESOURCES.invoices.path, id, RESOURCES.invoices.single);
@@ -246,8 +253,7 @@ export function registerInvoicingTools(
     "freshbooks_record_payment",
     {
       description:
-        "Record a payment against an invoice. Requires confirm: true to execute; without it returns " +
-        "a dry-run preview and makes no network call.",
+        "Record a payment against an invoice. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         invoiceid: z
           .number()
@@ -268,18 +274,21 @@ export function registerInvoicingTools(
           .optional()
           .describe('Payment type, e.g. "Check", "Credit"'),
         note: z.string().optional(),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, ...rest }) => {
+    async ({ confirmToken, ...rest }, ctx) => {
       const payload = stripUndefined(rest);
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Record FreshBooks payment",
-        "POST",
-        RESOURCES.payments.path,
-        { payment: payload },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_record_payment",
+        action: "payment.create",
+        summary: "Record FreshBooks payment",
+        method: "POST",
+        path: RESOURCES.payments.path,
+        body: { payment: payload },
+        target: payload.invoiceid as number,
+        confirmToken,
+      });
       if (gate) return gate;
       return minifiedResult(
         await client.accountingWrite(

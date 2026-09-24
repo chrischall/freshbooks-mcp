@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { BUSINESS_RESOURCES } from "../resources.js";
-import { previewUnlessConfirmed, schemaConfirm } from "./_confirm.js";
+import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 
 /**
  * Projects, time tracking and services.
@@ -67,8 +67,7 @@ export function registerProjectTools(
     "freshbooks_create_project",
     {
       description:
-        "Create a project. Requires confirm: true to execute; without it returns a dry-run " +
-        "preview and makes no network call.",
+        "Create a project. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         title: z.string().describe("Project title"),
         client_id: z
@@ -99,25 +98,25 @@ export function registerProjectTools(
           .record(z.string(), z.unknown())
           .optional()
           .describe("Additional raw project fields."),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, fields, ...rest }) => {
+    async ({ confirmToken, fields, ...rest }, ctx) => {
       const payload = {
         ...Object.fromEntries(
           Object.entries(rest).filter(([, v]) => v !== undefined),
         ),
         ...(fields ?? {}),
       };
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Create FreshBooks project",
-        "POST",
-        R.projects.path,
-        {
-          project: payload,
-        },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_create_project",
+        action: "project.create",
+        summary: "Create FreshBooks project",
+        method: "POST",
+        path: R.projects.path,
+        body: { project: payload },
+        confirmToken,
+      });
       if (gate) return gate;
       return minifiedResult(
         await client.businessWrite(
@@ -156,8 +155,7 @@ export function registerProjectTools(
     "freshbooks_create_time_entry",
     {
       description:
-        "Log a time entry. Duration is in SECONDS. Requires confirm: true to execute; without " +
-        "it returns a dry-run preview and makes no network call.",
+        "Log a time entry. Duration is in SECONDS. " + CONFIRM_DESCRIPTION,
       inputSchema: z.object({
         duration: z
           .number()
@@ -172,20 +170,22 @@ export function registerProjectTools(
         service_id: z.number().int().positive().optional(),
         note: z.string().optional(),
         billable: z.boolean().optional(),
-        confirm: schemaConfirm,
+        confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirm, ...rest }) => {
+    async ({ confirmToken, ...rest }, ctx) => {
       const payload = Object.fromEntries(
         Object.entries(rest).filter(([, v]) => v !== undefined),
       );
-      const gate = previewUnlessConfirmed(
-        confirm,
-        "Log FreshBooks time entry",
-        "POST",
-        R.time_entries.path,
-        { time_entry: payload },
-      );
+      const gate = await confirmWrite(ctx, {
+        tool: "freshbooks_create_time_entry",
+        action: "time_entry.create",
+        summary: "Log FreshBooks time entry",
+        method: "POST",
+        path: R.time_entries.path,
+        body: { time_entry: payload },
+        confirmToken,
+      });
       if (gate) return gate;
       return minifiedResult(
         await client.businessWrite(
