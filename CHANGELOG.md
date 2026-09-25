@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.0...v1.1.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 18.0.1 to 18.0.2 in the production-dependencies group ([#88](https://github.com/chrischall/freshbooks-mcp/issues/88)) ([2ef70bd](https://github.com/chrischall/freshbooks-mcp/commit/2ef70bda24b5c0e7ee0c589f243ec59c43d30dbe))
+
 ## [1.1.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.0.2...v1.1.0) (2026-09-24)
 
 
