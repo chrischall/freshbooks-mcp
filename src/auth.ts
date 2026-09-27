@@ -15,9 +15,9 @@ import { McpToolError, expandPath, readEnvVar } from '@chrischall/mcp-utils';
 import {
   TOKEN_REFRESH_SKEW_MS,
   TokenManager,
+  StatePersistenceError,
   createFileStatePersistence,
   type BearerTokens,
-  type StatePersistence,
 } from '@chrischall/mcp-utils/session';
 
 const TOKEN_URL = 'https://api.freshbooks.com/auth/oauth/token';
@@ -181,8 +181,17 @@ interface TokenResponse {
   expires_in: number;
 }
 
-/** Save a local authorization without returning either token to the MCP caller. */
-export function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse): void {
+/** Exchange and save a local authorization under the same lock as refreshes. */
+export async function authorizeLocally(config: OAuthConfig, code: string): Promise<void> {
+  const filePath = defaultStorePath();
+  await withRefreshLock(`${filePath}.lock`, async () => {
+    const tokens = await exchangeAuthorizationCode(config, code);
+    saveLocalAuthorization(config, tokens, filePath);
+  });
+}
+
+/** Only called while holding the token-store lock. Never returns tokens to MCP. */
+function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse, filePath: string): void {
   const expiresAt = (tokens.created_at + tokens.expires_in) * 1000;
   if (typeof tokens.created_at !== 'number' || typeof tokens.expires_in !== 'number'
     || !Number.isFinite(expiresAt) || tokens.expires_in <= 0) {
@@ -191,7 +200,7 @@ export function saveLocalAuthorization(config: OAuthConfig, tokens: TokenRespons
   try {
     // An existing env seed can remain configured during reauthorization. Bind
     // the new stored pair to it so the next startup uses the new saved token.
-    tokenStore({ ...config, refreshToken: readEnvVar('FRESHBOOKS_REFRESH_TOKEN') ?? '' }, defaultStorePath()).save({
+    tokenStore({ ...config, refreshToken: readEnvVar('FRESHBOOKS_REFRESH_TOKEN') ?? '' }, filePath).save({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt,
@@ -558,9 +567,9 @@ async function withRefreshLock<T>(lockPath: string, fn: () => Promise<T>): Promi
  *  - **A failed write is FATAL.** `TokenManager` persists the rotated token
  *    before its refresh resolves to any caller, so no request ever runs on a
  *    token that is not on disk; if the write fails, the old token is already
- *    burned upstream and silence would lock the account out. `onPersistError`
- *    throws, and the library wraps it so the failure can never be mistaken for
- *    a revoked credential and trigger a store-clearing recovery.
+ *    burned upstream and silence would lock the account out. A persistence
+ *    failure is wrapped so it cannot be mistaken for a revoked credential or
+ *    ignored in favor of a cached access token.
  */
 /**
  * Whether the persisted refresh token differs from the CONFIGURED one — i.e.
@@ -598,12 +607,6 @@ export function createTokenManager(
   // SyncStatePersistence, so `load()` is already `BearerTokens | null`.
   const loadSync = (): BearerTokens | null =>
     store.load() ?? readLegacyStore(filePath, config.refreshToken);
-  const persistence: StatePersistence<BearerTokens> = {
-    load: loadSync,
-    save: (tokens) => store.save(tokens),
-    clear: () => store.clear(),
-  };
-
   // Read here rather than handing TokenManager a bootstrap function: there is no
   // login to defer, and a function form would make the manager persist this
   // placeholder before the first refresh had produced anything worth storing.
@@ -633,28 +636,19 @@ export function createTokenManager(
           refreshToken: tok.refresh_token,
           expiresAt: (tok.created_at + tok.expires_in) * 1000,
         };
-        // Persist BEFORE releasing the lock, so the next process to take it reads
-        // the successor rather than the token just spent. A failure here is not
-        // swallowed for good: TokenManager persists again on return, and its
-        // onPersistError below makes that failure fatal with the right hint.
+        // This is the ONLY refresh write. TokenManager must not persist again
+        // after releasing the lock: another process may already have saved a
+        // newer authorization by the time its continuation resumes.
         try {
           store.save(next);
         } catch {
-          /* surfaced by TokenManager's own persist */
+          throw new StatePersistenceError(new McpToolError('Refreshed the FreshBooks token but could not persist it.', {
+            hint: 'The previous refresh token is now spent. Fix the token store path/permissions first. ' + recoveryHint(),
+          }));
         }
         return next;
       }),
-    persistence,
-    onPersistError: (err) => {
-      const detail = err instanceof Error ? err.message : String(err);
-      throw new McpToolError(`Refreshed the FreshBooks token but could not persist it: ${detail}`, {
-        // The persist failure is the actionable half — fix the store — but the
-        // recovery once the token IS lost differs by environment, so defer to
-        // the shared hint rather than restating the local-dev one.
-        hint:
-          'The previous refresh token is now spent, so losing the new one locks the account out. ' +
-          'Fix the token store path/permissions first. ' + recoveryHint(),
-      });
-    },
+    // The store is loaded explicitly, and the refresh callback owns its writes.
+    // TokenManager persistence would introduce an unlocked second writer.
   });
 }

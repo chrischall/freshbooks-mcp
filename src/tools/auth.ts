@@ -3,10 +3,10 @@ import { z } from "zod";
 import { minifiedResult } from "@chrischall/mcp-utils";
 import {
   authorizeUrl,
+  authorizeLocally,
   exchangeAuthorizationCode,
   isHosted,
   readBootstrapConfig,
-  saveLocalAuthorization,
 } from "../auth.js";
 
 /**
@@ -63,9 +63,8 @@ export function registerAuthTools(server: McpServer): void {
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();
       if ("error" in result) return minifiedResult({ error: result.error });
-      const tokens = await exchangeAuthorizationCode(result.config, code);
       if (!isHosted()) {
-        saveLocalAuthorization(result.config, tokens);
+        await authorizeLocally(result.config, code);
         return minifiedResult({
           connected: true,
           note: "Credentials were saved privately. Restart the local MCP server to use them. No refresh token needs to be copied into chat or configuration.",
@@ -75,6 +74,7 @@ export function registerAuthTools(server: McpServer): void {
       // captures from this step. The access token is deliberately NOT
       // returned: it expires in hours and echoing it only widens where a live
       // credential can be read from.
+      const tokens = await exchangeAuthorizationCode(result.config, code);
       return minifiedResult({
         refresh_token: tokens.refresh_token,
         expires_in: tokens.expires_in,

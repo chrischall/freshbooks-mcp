@@ -70,6 +70,9 @@ client ID, secret, and redirect URI. Changing those requires a new sign-in.
 For existing environment-token setups, the stored rotation still takes precedence;
 changing `FRESHBOOKS_REFRESH_TOKEN` to a new value starts a new token chain.
 Local reauthorization also works with an existing environment seed left in place.
+The local authorization exchange and save use the same lock as refreshes. A refresh
+writes only while it holds that lock, so it cannot overwrite a newer login after
+releasing the lock.
 Restart every local server using the store after reauthorization.
 
 ## Tools
