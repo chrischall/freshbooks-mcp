@@ -58,8 +58,8 @@
     "freshbooks_refresh_token": {
       "type": "string",
       "title": "Refresh Token",
-      "description": "Refresh token from the one-time OAuth bootstrap",
-      "required": true,
+      "description": "Optional legacy token seed. Local sign-in saves credentials privately without this field.",
+      "required": false,
       "sensitive": true
     },
     "freshbooks_business_id": {

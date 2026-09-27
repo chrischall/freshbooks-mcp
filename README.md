@@ -19,21 +19,27 @@ one-time browser authorization is required.
 1. Register an app at <https://my.freshbooks.com/#/developer>. The redirect URI must be
    **HTTPS with no query string**; `https://localhost` works and never needs to resolve.
 2. Note the **Client ID** and **Client Secret**.
-3. Obtain a refresh token, either way:
+3. Complete the one-time authorization:
    - **From the server itself** (no script): set `FRESHBOOKS_CLIENT_ID` and
      `FRESHBOOKS_CLIENT_SECRET`, start it, then call `freshbooks_auth_url`, open
      the URL it returns, approve, and pass the URL you land on to
-     `freshbooks_auth_exchange`. Those two tools need no refresh token — minting
-     one is what they are for. This is also the path mcp-host's `authFlow`
-     drives, so a hosted connector can do it without you pasting anything.
-   - **From the script**, if you prefer it outside the server — see
-     [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md).
+     `freshbooks_auth_exchange`. Local sessions save the tokens directly to
+     `FRESHBOOKS_TOKEN_STORE` and return only a success message. Restart the
+     local MCP server after that message. No token needs to be copied into chat
+     or configuration. Keep the same app credentials and store path after restart.
+   - **Hosted connections:** mcp-host's `authFlow` still captures the refresh
+     token from the exchange response and supplies it through its secret store.
+     `MCP_DATA_DIR` identifies this hosted environment. Do not set it for a local
+     coding-agent connection: hosted mode intentionally returns the token.
+   - **Legacy/manual setup:** the scripts in
+     [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md) print tokens.
+     Run them only in a private terminal, never in an agent's captured terminal.
 4. Configure:
 
 ```sh
 FRESHBOOKS_CLIENT_ID=...
 FRESHBOOKS_CLIENT_SECRET=...
-FRESHBOOKS_REFRESH_TOKEN=...       # from the bootstrap
+FRESHBOOKS_REFRESH_TOKEN=...       # optional locally; hosted/legacy token seed
 FRESHBOOKS_REDIRECT_URI=https://localhost   # optional; must match what you registered
 FRESHBOOKS_TOKEN_STORE=~/.freshbooks-mcp/session.json   # optional
 FRESHBOOKS_BUSINESS_ID=...         # optional; required for writes if you belong to several businesses
@@ -59,8 +65,12 @@ Two consequences worth knowing:
 - **If the store is lost, re-run the bootstrap.** A spent refresh token cannot be
   recovered.
 
-Changing `FRESHBOOKS_REFRESH_TOKEN` to a freshly bootstrapped value is detected and
-adopted, so re-bootstrapping is the supported recovery path.
+Local sign-in without an environment token binds the private store to the app's
+client ID, secret, and redirect URI. Changing those requires a new sign-in.
+For existing environment-token setups, the stored rotation still takes precedence;
+changing `FRESHBOOKS_REFRESH_TOKEN` to a new value starts a new token chain.
+Local reauthorization also works with an existing environment seed left in place.
+Restart every local server using the store after reauthorization.
 
 ## Tools
 
@@ -68,7 +78,7 @@ adopted, so re-bootstrapping is the supported recovery path.
 | --- | --- |
 | `freshbooks_get_identity` | Resolve accountId / businessId / businessUuid |
 | `freshbooks_auth_url` | Get the consent URL to authorise this connection |
-| `freshbooks_auth_exchange` | Exchange the authorization code (or pasted redirect URL) for a refresh token |
+| `freshbooks_auth_exchange` | Complete authorization; save tokens privately in local sessions or return the refresh token to the hosted auth flow |
 | `freshbooks_healthcheck` | Verify the OAuth credential and FreshBooks reachability; distinguishes "no credential" from "rejected" from "FreshBooks is down" |
 | `freshbooks_list_invoices` / `freshbooks_get_invoice` | Browse and fetch invoices |
 | `freshbooks_list_clients` / `freshbooks_get_client` | Browse and fetch clients |

@@ -58,11 +58,8 @@ export interface OAuthConfig {
  * Read the APP credentials only — client id, secret and redirect — without
  * requiring a refresh token.
  *
- * This is what the bootstrap tools need. `readOAuthConfig` demands all three,
- * which is right for every request path (they cannot work without a token) but
- * wrong for the two tools whose whole purpose is MINTING that token: requiring
- * it there makes the first-time flow impossible, which is the state a
- * first-time user is always in.
+ * The bootstrap tools need only the app credentials. Normal request paths
+ * also need a refresh token, supplied by the environment or a local store.
  *
  * `refreshToken` comes back as `''`. Nothing on this path sends it — the
  * authorization-code grant does not carry one — so an empty string is the
@@ -96,14 +93,25 @@ export function readBootstrapConfig(): { config: OAuthConfig } | { error: string
 }
 
 /** Read OAuth config, or return the reason it is unusable (deferred-config-error pattern). */
-export function readOAuthConfig(): { config: OAuthConfig } | { error: string; advice: string } {
+export function readOAuthConfig(opts: { storePath?: string } = {}): { config: OAuthConfig } | { error: string; advice: string } {
   const clientId = readEnvVar('FRESHBOOKS_CLIENT_ID');
   const clientSecret = readEnvVar('FRESHBOOKS_CLIENT_SECRET');
   const refreshToken = readEnvVar('FRESHBOOKS_REFRESH_TOKEN');
+  const config: OAuthConfig = {
+    clientId: clientId ?? '',
+    clientSecret: clientSecret ?? '',
+    refreshToken: refreshToken ?? '',
+    redirectUri: readEnvVar('FRESHBOOKS_REDIRECT_URI') ?? DEFAULT_REDIRECT_URI,
+  };
+  // Local authorization saves credentials directly. Hosted connections still
+  // receive their seed from the host's secret store through the environment.
+  const savedLocalToken = !refreshToken && clientId && clientSecret && !isHosted()
+    ? tokenStore(config, opts.storePath ?? defaultStorePath()).load()?.refreshToken
+    : undefined;
   const missing = [
     clientId ? null : 'FRESHBOOKS_CLIENT_ID',
     clientSecret ? null : 'FRESHBOOKS_CLIENT_SECRET',
-    refreshToken ? null : 'FRESHBOOKS_REFRESH_TOKEN',
+    refreshToken || savedLocalToken ? null : 'FRESHBOOKS_REFRESH_TOKEN',
   ].filter((m): m is string => m !== null);
 
   if (missing.length > 0) {
@@ -139,14 +147,12 @@ export function readOAuthConfig(): { config: OAuthConfig } | { error: string; ad
       advice,
     };
   }
-  return {
-    config: {
-      clientId: clientId as string,
-      clientSecret: clientSecret as string,
-      refreshToken: refreshToken as string,
-      redirectUri: readEnvVar('FRESHBOOKS_REDIRECT_URI') ?? DEFAULT_REDIRECT_URI,
-    },
-  };
+  return { config };
+}
+
+/** The existing mcp-host signal; local coding-agent sessions do not set it. */
+export function isHosted(): boolean {
+  return Boolean(readEnvVar('MCP_DATA_DIR'));
 }
 
 export function defaultStorePath(): string {
@@ -154,11 +160,47 @@ export function defaultStorePath(): string {
   return configured ? expandPath(configured) : join(homedir(), '.freshbooks-mcp', 'session.json');
 }
 
+/** Reuse the protected, atomic token store for local sign-in and later refreshes. */
+function tokenStore(config: OAuthConfig, filePath: string) {
+  return createFileStatePersistence<BearerTokens>({
+    filePath,
+    // Retain the existing binding for env-seeded connections. Local sign-in
+    // has no token in the environment, so bind to the app instead. The helper
+    // stores only a salted digest of this value, never the app secret itself.
+    boundTo: config.refreshToken || `local-oauth:${JSON.stringify([
+      config.clientId, config.clientSecret, config.redirectUri,
+    ])}`,
+    validate: (raw) => (isBearerTokens(raw) ? raw : null),
+  });
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
   created_at: number;
   expires_in: number;
+}
+
+/** Save a local authorization without returning either token to the MCP caller. */
+export function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse): void {
+  const expiresAt = (tokens.created_at + tokens.expires_in) * 1000;
+  if (typeof tokens.created_at !== 'number' || typeof tokens.expires_in !== 'number'
+    || !Number.isFinite(expiresAt) || tokens.expires_in <= 0) {
+    throw new McpToolError('FreshBooks returned invalid token expiry information. Authorise again.');
+  }
+  try {
+    // An existing env seed can remain configured during reauthorization. Bind
+    // the new stored pair to it so the next startup uses the new saved token.
+    tokenStore({ ...config, refreshToken: readEnvVar('FRESHBOOKS_REFRESH_TOKEN') ?? '' }, defaultStorePath()).save({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt,
+    });
+  } catch {
+    throw new McpToolError('FreshBooks authorization succeeded, but its credentials could not be saved.', {
+      hint: 'Check the token-store path and permissions, then authorise again with a new code. No token was returned to chat.',
+    });
+  }
 }
 
 /**
@@ -255,8 +297,13 @@ export async function exchangeAuthorizationCode(
     });
   }
 
-  if (!res.ok || !parsed.access_token) {
-    const detail = parsed.error_description ?? parsed.error ?? raw.slice(0, 200);
+  if (!res.ok || typeof parsed.access_token !== 'string' || !parsed.access_token) {
+    // Never echo token-endpoint bodies or free-form descriptions into MCP
+    // results: even a malformed/error response may contain credentials.
+    const knownErrors = ['invalid_request', 'invalid_client', 'invalid_grant',
+      'unauthorized_client', 'unsupported_grant_type', 'invalid_scope'];
+    const detail = typeof parsed.error === 'string' && knownErrors.includes(parsed.error)
+      ? parsed.error : `HTTP ${res.status}`;
     // An authorization code is SINGLE-USE. Saying so is the difference between
     // a person authorising again and a person retrying a spent code forever.
     throw new McpToolError(`FreshBooks refused the authorization code: ${detail}`, {
@@ -266,7 +313,7 @@ export async function exchangeAuthorizationCode(
     });
   }
 
-  if (!parsed.refresh_token) {
+  if (typeof parsed.refresh_token !== 'string' || !parsed.refresh_token) {
     throw new McpToolError('FreshBooks returned no refresh token for that code.', {
       hint: 'Without a refresh token the connection cannot outlive the access token. Authorise again.',
     });
@@ -292,7 +339,7 @@ export function recoveryHint(): string {
   const shared =
     'FreshBooks refresh tokens are single-use and rotate on every refresh, so a spent ' +
     'or lost token cannot be recovered — a new one has to be minted. ';
-  if (readEnvVar('MCP_DATA_DIR')) {
+  if (isHosted()) {
     return (
       shared +
       'Reconnect this connector: the connect flow opens the FreshBooks consent page, takes the ' +
@@ -303,7 +350,8 @@ export function recoveryHint(): string {
   return (
     shared +
     'Call freshbooks_auth_url, approve in the browser, then pass the URL you land on to ' +
-    'freshbooks_auth_exchange, and set the FRESHBOOKS_REFRESH_TOKEN it returns.'
+    'freshbooks_auth_exchange. It saves the credentials privately; restart the local MCP server ' +
+    'after it reports success. No FRESHBOOKS_REFRESH_TOKEN needs to be copied into chat or configuration.'
   );
 }
 
@@ -534,11 +582,7 @@ export function hasRotated(
   opts: { storePath?: string } = {},
 ): boolean | null {
   const filePath = opts.storePath ?? defaultStorePath();
-  const store = createFileStatePersistence<BearerTokens>({
-    filePath,
-    boundTo: config.refreshToken,
-    validate: (raw) => (isBearerTokens(raw) ? raw : null),
-  });
+  const store = tokenStore(config, filePath);
   const stored = store.load() ?? readLegacyStore(filePath, config.refreshToken);
   if (!stored || !stored.refreshToken) return null;
   return stored.refreshToken !== config.refreshToken;
@@ -549,13 +593,7 @@ export function createTokenManager(
   opts: { storePath?: string; fetchImpl?: typeof fetch } = {},
 ): TokenManager {
   const filePath = opts.storePath ?? defaultStorePath();
-  const store = createFileStatePersistence<BearerTokens>({
-    filePath,
-    // Replaces `seededFromEnv`: the record is bound to the env token that seeded
-    // it, so a re-bootstrap discards it. Only a salted digest is written.
-    boundTo: config.refreshToken,
-    validate: (raw) => (isBearerTokens(raw) ? raw : null),
-  });
+  const store = tokenStore(config, filePath);
   // No cast needed since mcp-utils 0.17.1: the file-backed store advertises
   // SyncStatePersistence, so `load()` is already `BearerTokens | null`.
   const loadSync = (): BearerTokens | null =>

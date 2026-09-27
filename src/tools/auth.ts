@@ -4,7 +4,9 @@ import { minifiedResult } from "@chrischall/mcp-utils";
 import {
   authorizeUrl,
   exchangeAuthorizationCode,
+  isHosted,
   readBootstrapConfig,
+  saveLocalAuthorization,
 } from "../auth.js";
 
 /**
@@ -19,7 +21,8 @@ import {
  * themselves.
  *
  * `freshbooks_auth_url` returns where to go; `freshbooks_auth_exchange` turns
- * what comes back into a refresh token.
+ * what comes back into a refresh token. Local sessions save it privately;
+ * hosted sessions return it to mcp-host's credential-capture flow.
  */
 export function registerAuthTools(server: McpServer): void {
   server.registerTool(
@@ -47,7 +50,7 @@ export function registerAuthTools(server: McpServer): void {
     "freshbooks_auth_exchange",
     {
       description:
-        "Exchange a FreshBooks authorization code for a refresh token. Accepts the whole redirect URL you landed on, or the bare code. The authorization code is SINGLE-USE — if this fails, get a new one from freshbooks_auth_url rather than retrying.",
+        "Complete FreshBooks authorization. Local sessions save the credentials privately and return only status; hosted sessions return the refresh token to the host's credential-capture flow. Accepts the redirect URL or bare code. The code is SINGLE-USE — if this fails, authorise again rather than retrying it.",
       inputSchema: z.object({
         code: z
           .string()
@@ -61,6 +64,13 @@ export function registerAuthTools(server: McpServer): void {
       const result = readBootstrapConfig();
       if ("error" in result) return minifiedResult({ error: result.error });
       const tokens = await exchangeAuthorizationCode(result.config, code);
+      if (!isHosted()) {
+        saveLocalAuthorization(result.config, tokens);
+        return minifiedResult({
+          connected: true,
+          note: "Credentials were saved privately. Restart the local MCP server to use them. No refresh token needs to be copied into chat or configuration.",
+        });
+      }
       // The refresh token IS the durable credential mcp-host's authFlow
       // captures from this step. The access token is deliberately NOT
       // returned: it expires in hours and echoing it only widens where a live
