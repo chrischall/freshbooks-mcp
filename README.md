@@ -39,7 +39,7 @@ one-time browser authorization is required.
 ```sh
 FRESHBOOKS_CLIENT_ID=...
 FRESHBOOKS_CLIENT_SECRET=...
-FRESHBOOKS_REFRESH_TOKEN=...       # optional locally; hosted/legacy token seed
+FRESHBOOKS_REFRESH_TOKEN=...       # optional locally; if set during reauth, keep it set
 FRESHBOOKS_REDIRECT_URI=https://localhost   # optional; must match what you registered
 FRESHBOOKS_TOKEN_STORE=~/.freshbooks-mcp/session.json   # optional
 FRESHBOOKS_BUSINESS_ID=...         # optional; required for writes if you belong to several businesses
@@ -69,7 +69,9 @@ Local sign-in without an environment token binds the private store to the app's
 client ID, secret, and redirect URI. Changing those requires a new sign-in.
 For existing environment-token setups, the stored rotation still takes precedence;
 changing `FRESHBOOKS_REFRESH_TOKEN` to a new value starts a new token chain.
-Local reauthorization also works with an existing environment seed left in place.
+If you reauthorize locally while `FRESHBOOKS_REFRESH_TOKEN` is set, keep that same
+value configured: the saved login is bound to it. To remove the variable, first
+unset it and complete local sign-in again so the store is bound to the app instead.
 The local authorization exchange and save use the same lock as refreshes. A refresh
 writes only while it holds that lock, so it cannot overwrite a newer login after
 releasing the lock.
