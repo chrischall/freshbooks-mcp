@@ -125,7 +125,7 @@ export class FreshbooksClient {
     // Deferred-config-error pattern: the server must still boot (and answer the host's
     // install-time tools/list probe) with no credentials present. The error surfaces on
     // the first tool call instead of at construction.
-    const result = readOAuthConfig();
+    const result = readOAuthConfig({ storePath: opts.storePath });
     if ('error' in result) {
       this.configError = result.error;
       this.configAdvice = result.advice;
@@ -147,6 +147,7 @@ export class FreshbooksClient {
    */
   describeCredential(): { source: string | null; detail?: Record<string, unknown> } {
     if (this.config === null) return { source: null };
+    if (!this.config.refreshToken) return { source: 'token-store', detail: { refresh_token: 'stored locally' } };
     // Real rotation state, read from the persisted store — NOT inferred from
     // whether `tokenManager` happens to have been constructed, which only
     // tracks "a request already ran in this process". `null` means nothing is

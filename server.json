@@ -32,8 +32,8 @@
         },
         {
           "name": "FRESHBOOKS_REFRESH_TOKEN",
-          "description": "OAuth refresh token from the one-time bootstrap (rotates on every use)",
-          "isRequired": true,
+          "description": "Optional for local sign-in, which saves tokens privately. Required for hosted or legacy environment-token setup.",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
         },
