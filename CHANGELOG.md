@@ -5,7 +5,7 @@
 
 ### Bug Fixes
 
-* **auth:** keep local OAuth tokens out of MCP results ([#90](https://github.com/chrischall/freshbooks-mcp/issues/90)) ([d11b27b](https://github.com/chrischall/freshbooks-mcp/commit/d11b27b5498567ec0c83eef7eda1570a490695f2))
+* **auth:** keep local OAuth tokens out of MCP results (thanks @ovsw) ([#90](https://github.com/chrischall/freshbooks-mcp/issues/90)) ([d11b27b](https://github.com/chrischall/freshbooks-mcp/commit/d11b27b5498567ec0c83eef7eda1570a490695f2))
 
 ## [1.1.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.0...v1.1.1) (2026-09-24)
 
