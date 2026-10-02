@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EdgeBlockedError } from '@chrischall/mcp-utils';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
+import { exchangeAuthorizationCode } from '../src/auth.js';
 import { FreshbooksClient } from '../src/client.js';
+import { registerAuthTools } from '../src/tools/auth.js';
 import { registerHealthcheckTools } from '../src/tools/healthcheck.js';
 
 /**
@@ -82,5 +85,60 @@ describe('a CDN/WAF block reads as edge_blocked, not an unknown failure', () => 
     const r = await healthcheck(() => blocked());
     expect(r.ok).toBe(false);
     expect(r.error?.kind).toBe('edge_blocked');
+  });
+});
+
+describe('a CDN/WAF block on the authorization-code exchange reads as edge_blocked', () => {
+  const saved = { ...process.env };
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'fb-edge-code-'));
+    for (const name of ['FRESHBOOKS_REFRESH_TOKEN', 'FRESHBOOKS_REDIRECT_URI', 'MCP_DATA_DIR']) {
+      delete process.env[name];
+    }
+    process.env.FRESHBOOKS_CLIENT_ID = 'cid';
+    process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
+    process.env.FRESHBOOKS_TOKEN_STORE = join(dir, 'session.json');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...saved };
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const config = { clientId: 'cid', clientSecret: 'csecret', redirectUri: 'https://localhost', refreshToken: '' };
+
+  it('throws EdgeBlockedError rather than a generic non-JSON error', async () => {
+    const fetchImpl = (async () => blocked()) as unknown as typeof fetch;
+    const err = await exchangeAuthorizationCode(config, 'thecode', fetchImpl).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EdgeBlockedError);
+    expect((err as Error).message).toMatch(/POST \/auth\/oauth\/token/);
+    expect((err as Error).message).not.toMatch(/non-JSON/);
+  });
+
+  it('through freshbooks_auth_exchange, without disturbing the saved credentials', async () => {
+    // A first, successful local authorization leaves a saved credential.
+    vi.stubGlobal('fetch', vi.fn(async () => tokenOk()));
+    const h = await createTestHarness((server) => registerAuthTools(server));
+    try {
+      const first = await h.callTool('freshbooks_auth_exchange', { code: 'code-1' });
+      expect(first.isError).toBeFalsy();
+      const before = readFileSync(process.env.FRESHBOOKS_TOKEN_STORE as string, 'utf8');
+      expect(before).toContain('rt2');
+
+      // A re-authorization that the edge refuses must name the block and leave
+      // the saved credential exactly as it was.
+      vi.stubGlobal('fetch', vi.fn(async () => blocked()));
+      const res = await h.callTool('freshbooks_auth_exchange', { code: 'code-2' });
+      expect(res.isError).toBe(true);
+      const text = JSON.stringify(res);
+      expect(text).toMatch(/CDN\/WAF \(CloudFront\)/);
+      expect(text).not.toMatch(/non-JSON/);
+      expect(readFileSync(process.env.FRESHBOOKS_TOKEN_STORE as string, 'utf8')).toBe(before);
+    } finally {
+      await h.close();
+    }
   });
 });

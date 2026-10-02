@@ -301,6 +301,9 @@ export async function exchangeAuthorizationCode(
   try {
     parsed = JSON.parse(raw) as typeof parsed;
   } catch {
+    // A CDN/WAF refusal never reached FreshBooks, so the code was not spent —
+    // say so rather than sending the person round the consent flow again.
+    throwIfEdgeBlocked(res, raw, 'POST', '/auth/oauth/token');
     throw new McpToolError(`FreshBooks returned a non-JSON token response (HTTP ${res.status}).`, {
       hint: 'Usually an outage or a proxy in front of the API. Authorise again for a new code.',
     });
