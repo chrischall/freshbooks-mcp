@@ -8,22 +8,33 @@ import { createTokenManager, type OAuthConfig } from '../src/auth.js';
 import { registerAuthTools } from '../src/tools/auth.js';
 
 // Simulate another process committing immediately after this process releases
-// its lock, before TokenManager's awaiting continuation resumes.
+// its lock, before TokenManager's awaiting continuation resumes. The lock now
+// lives in @chrischall/mcp-utils (withFileLock / the store's withLock), so the
+// probes wrap those entry points rather than node:fs.
 const hooks = vi.hoisted(() => ({
   beforeLock: undefined as (() => void) | undefined,
   afterUnlock: undefined as (() => void) | undefined,
 }));
-vi.mock('node:fs', async (importOriginal) => {
-  const fs = await importOriginal<typeof import('node:fs')>();
+vi.mock('@chrischall/mcp-utils/session', async (importOriginal) => {
+  const session = await importOriginal<typeof import('@chrischall/mcp-utils/session')>();
   return {
-    ...fs,
-    openSync(path: import('node:fs').PathLike, flags: string | number, mode?: import('node:fs').Mode) {
-      if (String(path).endsWith('.lock')) hooks.beforeLock?.();
-      return fs.openSync(path, flags, mode);
+    ...session,
+    withFileLock<T>(lockPath: string, fn: () => Promise<T>) {
+      hooks.beforeLock?.();
+      return session.withFileLock(lockPath, fn);
     },
-    unlinkSync(path: import('node:fs').PathLike) {
-      fs.unlinkSync(path);
-      if (String(path).endsWith('.lock')) hooks.afterUnlock?.();
+    createFileStatePersistence<T>(opts: Parameters<typeof session.createFileStatePersistence<T>>[0]) {
+      const store = session.createFileStatePersistence<T>(opts);
+      const withLock = store.withLock?.bind(store);
+      if (withLock === undefined) return store;
+      return Object.assign(store, {
+        async withLock<R>(fn: () => Promise<R>): Promise<R> {
+          hooks.beforeLock?.();
+          const result = await withLock(fn);
+          hooks.afterUnlock?.(); // released; the caller's continuation has not run yet
+          return result;
+        },
+      });
     },
   };
 });
