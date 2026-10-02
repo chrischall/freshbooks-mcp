@@ -1,6 +1,14 @@
 import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
-import { createTokenManager, hasRotated, ownerSetHint, readOAuthConfig, recoveryHint, type OAuthConfig } from './auth.js';
+import {
+  createTokenManager,
+  hasRotated,
+  ownerSetHint,
+  readOAuthConfig,
+  recoveryHint,
+  throwIfEdgeBlocked,
+  type OAuthConfig,
+} from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
 
@@ -220,6 +228,7 @@ export class FreshbooksClient {
       try {
         parsed = JSON.parse(raw);
       } catch {
+        throwIfEdgeBlocked(res, raw, method, path);
         throw new McpToolError(
           `FreshBooks returned a non-JSON response for ${method} ${path} (HTTP ${res.status}).`,
           { hint: 'This usually indicates an outage or an unexpected redirect.' },

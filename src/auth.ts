@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { McpToolError, expandPath, readEnvVar } from '@chrischall/mcp-utils';
+import { EdgeBlockedError, McpToolError, detectEdgeBlock, expandPath, readEnvVar } from '@chrischall/mcp-utils';
 import {
   TOKEN_REFRESH_SKEW_MS,
   TokenManager,
@@ -385,6 +385,16 @@ export function ownerSetHint(name: string): string {
   return `Set ${name} explicitly if you know it.`;
 }
 
+/**
+ * Throw {@link EdgeBlockedError} when a non-JSON response is a CDN/WAF refusal
+ * page rather than FreshBooks' own answer (chrischall/mcp-host#1015), so the
+ * healthcheck reports `edge_blocked` instead of an unexplained failure.
+ */
+export function throwIfEdgeBlocked(res: Response, body: string, method: string, path: string): void {
+  const edge = detectEdgeBlock({ body, headers: res.headers, status: res.status });
+  if (edge) throw new EdgeBlockedError(res.status, edge.vendor, { service: 'FreshBooks', method, path });
+}
+
 export async function exchangeRefreshToken(
   config: OAuthConfig,
   refreshToken: string,
@@ -409,6 +419,7 @@ export async function exchangeRefreshToken(
   try {
     parsed = JSON.parse(raw) as typeof parsed;
   } catch {
+    throwIfEdgeBlocked(res, raw, 'POST', '/auth/oauth/token');
     throw new McpToolError(`FreshBooks returned a non-JSON token response (HTTP ${res.status}).`, {
       hint: 'This usually means an outage or a proxy in front of the API. Retry shortly.',
     });
