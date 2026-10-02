@@ -1,22 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  statSync,
-  unlinkSync,
-  writeSync,
-} from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { EdgeBlockedError, McpToolError, detectEdgeBlock, expandPath, readEnvVar } from '@chrischall/mcp-utils';
 import {
-  TOKEN_REFRESH_SKEW_MS,
   TokenManager,
-  StatePersistenceError,
   createFileStatePersistence,
+  withFileLock,
   type BearerTokens,
 } from '@chrischall/mcp-utils/session';
 
@@ -184,7 +173,8 @@ interface TokenResponse {
 /** Exchange and save a local authorization under the same lock as refreshes. */
 export async function authorizeLocally(config: OAuthConfig, code: string): Promise<void> {
   const filePath = defaultStorePath();
-  await withRefreshLock(`${filePath}.lock`, async () => {
+  // The same `<store>.lock` the refresh path takes (via the store's withLock).
+  await withFileLock(`${filePath}.lock`, async () => {
     const tokens = await exchangeAuthorizationCode(config, code);
     saveLocalAuthorization(config, tokens, filePath);
   });
@@ -486,85 +476,6 @@ function isBearerTokens(raw: unknown): raw is BearerTokens {
   );
 }
 
-/** How long a refresh lock may be held before another process may break it. */
-const REFRESH_LOCK_STALE_MS = 60_000;
-const REFRESH_LOCK_POLL_MS = 25;
-
-/** Whether the process named in a lock file is still running. */
-function lockHolderAlive(lockPath: string): boolean {
-  try {
-    const pid = Number.parseInt(readFileSync(lockPath, 'utf8'), 10);
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    // EPERM: the process exists but belongs to someone else — still alive.
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
-/**
- * Run `fn` holding an advisory cross-process lock (an O_EXCL lock file next to
- * the store). A lock whose holder has died, or that has been held past
- * {@link REFRESH_LOCK_STALE_MS}, is broken rather than waited on forever.
- *
- * Advisory and best-effort: if the lock file cannot be created at all (an
- * unwritable directory), `fn` runs unlocked — the store write inside it will
- * fail the same way, and that failure is the one worth reporting.
- */
-async function withRefreshLock<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
-  const owner = `${process.pid}:${randomUUID()}`;
-  let held = false;
-  try {
-    mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
-  } catch {
-    /* fall through: openSync reports the real problem */
-  }
-  for (;;) {
-    try {
-      const fd = openSync(lockPath, 'wx', 0o600);
-      try {
-        writeSync(fd, owner);
-      } finally {
-        closeSync(fd);
-      }
-      held = true;
-      break;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') break; // cannot lock: run unlocked
-    }
-    let stale: boolean;
-    try {
-      stale =
-        !lockHolderAlive(lockPath) || Date.now() - statSync(lockPath).mtimeMs > REFRESH_LOCK_STALE_MS;
-    } catch {
-      continue; // released between our open and stat: retry at once
-    }
-    if (stale) {
-      try {
-        unlinkSync(lockPath);
-      } catch {
-        /* someone else broke it first */
-      }
-      continue;
-    }
-    await new Promise((resolve) => setTimeout(resolve, REFRESH_LOCK_POLL_MS));
-  }
-  try {
-    return await fn();
-  } finally {
-    if (held) {
-      try {
-        // Only remove the lock if it is still ours — it may have been broken as
-        // stale and re-taken by another process meanwhile.
-        if (readFileSync(lockPath, 'utf8') === owner) unlinkSync(lockPath);
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-}
-
 /**
  * Build a TokenManager over the shared persistence helpers.
  *
@@ -628,41 +539,36 @@ export function createTokenManager(
 
   return new TokenManager({
     initial: restored ?? { accessToken: '', refreshToken: config.refreshToken, expiresAt: 0 },
+    refresh: async (refreshToken: string) => {
+      const tok = await exchangeRefreshToken(config, refreshToken, opts.fetchImpl ?? fetch);
+      return {
+        accessToken: tok.access_token,
+        refreshToken: tok.refresh_token,
+        expiresAt: (tok.created_at + tok.expires_in) * 1000,
+      };
+    },
     // Several processes share this store (Claude Desktop plus any Claude Code
-    // sessions), and TokenManager reads it only once per process. So the
-    // refresh re-reads it under a cross-process lock: if another process has
-    // already rotated past the token held in memory, spending that one would
-    // be an invalid_grant — and the "re-mint" advice that follows would send
-    // the human through OAuth while a valid successor sat on disk.
-    refresh: (heldRefreshToken: string) =>
-      withRefreshLock(`${filePath}.lock`, async () => {
-        let refreshToken = heldRefreshToken;
-        const onDisk = loadSync();
-        if (onDisk?.refreshToken && onDisk.refreshToken !== heldRefreshToken) {
-          // Another process refreshed first. Its access token is the answer if
-          // still good; otherwise its refresh token is the live one to spend.
-          if (Date.now() < onDisk.expiresAt - TOKEN_REFRESH_SKEW_MS) return onDisk;
-          refreshToken = onDisk.refreshToken;
-        }
-        const tok = await exchangeRefreshToken(config, refreshToken, opts.fetchImpl ?? fetch);
-        const next: BearerTokens = {
-          accessToken: tok.access_token,
-          refreshToken: tok.refresh_token,
-          expiresAt: (tok.created_at + tok.expires_in) * 1000,
-        };
-        // This is the ONLY refresh write. TokenManager must not persist again
-        // after releasing the lock: another process may already have saved a
-        // newer authorization by the time its continuation resumes.
-        try {
-          store.save(next);
-        } catch {
-          throw new StatePersistenceError(new McpToolError('Refreshed the FreshBooks token but could not persist it.', {
-            hint: 'The previous refresh token is now spent. Fix the token store path/permissions first. ' + recoveryHint(),
-          }));
-        }
-        return next;
-      }),
-    // The store is loaded explicitly, and the refresh callback owns its writes.
-    // TokenManager persistence would introduce an unlocked second writer.
+    // sessions). `reloadBeforeRefresh` takes the store's cross-process lock,
+    // re-reads it, and adopts a rotation a sibling already wrote — its access
+    // token if still good, otherwise its refresh token is the one spent — then
+    // writes the result before releasing the lock (fleet-audit#1008). Without
+    // it, a process would spend a refresh token another had already rotated
+    // past: an invalid_grant, and "re-mint" advice while a valid successor sat
+    // on disk. The legacy-shape fallback rides along on `load`.
+    persistence: {
+      load: loadSync,
+      save: (t: BearerTokens) => store.save(t),
+      clear: () => store.clear(),
+      withLock: <R>(fn: () => Promise<R>) =>
+        store.withLock ? store.withLock(fn) : fn(),
+    },
+    reloadBeforeRefresh: true,
+    // A failed write is FATAL: the previous refresh token is already spent
+    // upstream, so silence would lock the account out on the next start.
+    onPersistError: () => {
+      throw new McpToolError('Refreshed the FreshBooks token but could not persist it.', {
+        hint: 'The previous refresh token is now spent. Fix the token store path/permissions first. ' + recoveryHint(),
+      });
+    },
   });
 }
