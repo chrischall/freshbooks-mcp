@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.4](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.3...v1.1.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** adopt @chrischall/mcp-utils 2.12.0 cross-process TokenManager refresh ([#103](https://github.com/chrischall/freshbooks-mcp/issues/103)) ([96aa193](https://github.com/chrischall/freshbooks-mcp/commit/96aa1936e783c7b46fce3d48567e356c752afec9))
+* **deps:** bump @chrischall/mcp-utils to 2.13.0 ([#104](https://github.com/chrischall/freshbooks-mcp/issues/104)) ([2275f1f](https://github.com/chrischall/freshbooks-mcp/commit/2275f1fd0abfe4c921caad014adad373b673e117))
+* keep credentials and report edge_blocked on CDN/WAF blocks (mcp-utils 2.10.0) ([#101](https://github.com/chrischall/freshbooks-mcp/issues/101)) ([9f4ffd0](https://github.com/chrischall/freshbooks-mcp/commit/9f4ffd0345203856d0fd5e913789e7e3ea68125a))
+* keep write approvals valid across a hosted restart (mcp-utils 2.11.0) ([#102](https://github.com/chrischall/freshbooks-mcp/issues/102)) ([96edb18](https://github.com/chrischall/freshbooks-mcp/commit/96edb183abf79efb818c705231399ebd4d2d46e6))
+* recognise a CDN/WAF block on the authorization-code exchange as edge_blocked ([#100](https://github.com/chrischall/freshbooks-mcp/issues/100)) ([fcc8070](https://github.com/chrischall/freshbooks-mcp/commit/fcc80700abaf8de05627ad2f55306deb493f160f))
+* report CDN/WAF blocks as edge_blocked, not a rejected credential (mcp-utils 2.9.0) ([#97](https://github.com/chrischall/freshbooks-mcp/issues/97)) ([2b2145f](https://github.com/chrischall/freshbooks-mcp/commit/2b2145ffa791937309c04615a6a3c13618a25725))
+
 ## [1.1.3](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.2...v1.1.3) (2026-09-30)
 
 
