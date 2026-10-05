@@ -1,2 +1,2 @@
 /** Single source of truth for the server version; release-please rewrites this line. */
-export const VERSION = '1.1.4'; // x-release-please-version
+export const VERSION = '1.1.5'; // x-release-please-version
