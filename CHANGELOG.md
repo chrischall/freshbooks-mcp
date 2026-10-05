@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.4...v1.1.5) (2026-10-05)
+
+
+### Bug Fixes
+
+* **deps:** require @chrischall/mcp-utils 2.14.0 and MCP SDK 2.3.0 ([#105](https://github.com/chrischall/freshbooks-mcp/issues/105)) ([2b849f7](https://github.com/chrischall/freshbooks-mcp/commit/2b849f7a096fa309c6545981fd42e4194a174e71))
+
 ## [1.1.4](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.3...v1.1.4) (2026-10-03)
 
 
