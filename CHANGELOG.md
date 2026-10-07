@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.5...v1.2.0) (2026-10-07)
+
+
+### Features
+
+* **deps:** add MCP_CONFIRM_ELICITATION=off for clients that never show confirmation prompts ([#107](https://github.com/chrischall/freshbooks-mcp/issues/107)) ([e641f9f](https://github.com/chrischall/freshbooks-mcp/commit/e641f9fbe67bd60c0db58efd08bd8a51706d4144))
+
+
+### Bug Fixes
+
+* **deps:** bump dotenv from 18.0.4 to 18.0.5 in the production-dependencies group ([#112](https://github.com/chrischall/freshbooks-mcp/issues/112)) ([2c83baa](https://github.com/chrischall/freshbooks-mcp/commit/2c83baacfcf00c2ac7596be3ae1f8f6690d86d94))
+
+
+### Documentation
+
+* document MCP_CONFIRM_ELICITATION ([#113](https://github.com/chrischall/freshbooks-mcp/issues/113)) ([1468b19](https://github.com/chrischall/freshbooks-mcp/commit/1468b19c522b4942faccc35ac74d1c00ce895e16))
+
 ## [1.1.5](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.4...v1.1.5) (2026-10-05)
 
 
