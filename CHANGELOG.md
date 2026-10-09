@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.0...v1.2.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* annotate tools truthfully and sync manifests with the served tools ([#121](https://github.com/chrischall/freshbooks-mcp/issues/121)) ([dec8885](https://github.com/chrischall/freshbooks-mcp/commit/dec8885fcbee68091d0c6d0f9b65026cab05cc2b))
+* **auth:** require OAuth state on consent and report slow refresh failures accurately ([#117](https://github.com/chrischall/freshbooks-mcp/issues/117)) ([da862e3](https://github.com/chrischall/freshbooks-mcp/commit/da862e336ced1724de67df395bc1cb1db682a05a))
+* declare the plugin MCP config under the mcpServers key Claude Code reads ([#122](https://github.com/chrischall/freshbooks-mcp/issues/122)) ([bdaa9ed](https://github.com/chrischall/freshbooks-mcp/commit/bdaa9ed6b1f7f7d3286db1a2830d5805fe4aed74))
+* **deps:** bump source-map-js from 1.2.1 to 1.2.2 in the security group across 1 directory ([#119](https://github.com/chrischall/freshbooks-mcp/issues/119)) ([cea94a0](https://github.com/chrischall/freshbooks-mcp/commit/cea94a0c91d50712cc17505120426f41fa33223f))
+* **deps:** update @chrischall/mcp-utils to 3.0.0 ([#120](https://github.com/chrischall/freshbooks-mcp/issues/120)) ([902bf76](https://github.com/chrischall/freshbooks-mcp/commit/902bf765197088c7a7b4724e1b41f5b609c26d27))
+* report missing projects as not found and drop unused dotenv ([#118](https://github.com/chrischall/freshbooks-mcp/issues/118)) ([eb1bb0b](https://github.com/chrischall/freshbooks-mcp/commit/eb1bb0b3f2378c39d4eb2ebd5380ecfcc79d6933))
+* resolve low-severity audit findings ([#114](https://github.com/chrischall/freshbooks-mcp/issues/114)) ([62ccb0f](https://github.com/chrischall/freshbooks-mcp/commit/62ccb0fa7725c12a0dd0ff9eac405e41f0083766))
+
 ## [1.2.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.1.5...v1.2.0) (2026-10-07)
 
 
