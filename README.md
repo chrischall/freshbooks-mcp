@@ -33,10 +33,20 @@ one-time browser authorization is required.
    - **Hosted connections:** mcp-host's `authFlow` still captures the refresh
      token from the exchange response and supplies it through its secret store.
      `MCP_DATA_DIR` identifies this hosted environment. Do not set it for a local
-     coding-agent connection: hosted mode intentionally returns the token. The
-     flow's prompt must collect the **whole** redirect URL, not just its code.
+     coding-agent connection: hosted mode intentionally returns the token.
      Issued states are kept as digests under `MCP_DATA_DIR`, so a child that is
      respawned while the person approves can still complete the login.
+     **The registration's flow must show the person the `authorize_url` that
+     `freshbooks_auth_url` returns.** That URL carries the one-time `state`,
+     and the exchange refuses any redirect without it. A static consent link
+     typed into a step description has no `state`, so every new login or
+     repair through it fails. Carry `authorize_url` from the
+     `freshbooks_auth_url` step and show it with a step link
+     (`link: {from: 'authorize_url', hosts: ['auth.freshbooks.com']}`, mcp-host
+     2.30.0 or later) on the step that prompts. That prompt must collect the
+     **whole** redirect URL, not just its code. Make this change before a
+     release with state checking reaches the hosted pin. Existing connections
+     keep refreshing; only new logins and repairs depend on it.
    - **Legacy/manual setup:** the scripts in
      [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md) print tokens.
      Run them only in a private terminal, never in an agent's captured terminal.
@@ -63,6 +73,14 @@ FreshBooks issues a **new refresh token on every refresh and immediately invalid
 old one**. This server persists each rotation to `FRESHBOOKS_TOKEN_STORE` (mode `0600`)
 before the refresh is considered complete, and prefers the stored token over the
 environment value — the stored one has rotated past it.
+
+The login flow also writes a small file of pending consent `state` digests
+(mode `0600`, entries expire after 15 minutes). Locally it sits beside the token
+store, at `<FRESHBOOKS_TOKEN_STORE>.oauth-state.json` (by default
+`~/.freshbooks-mcp/session.json.oauth-state.json`). Hosted, it is
+`$MCP_DATA_DIR/freshbooks-oauth-state.json`. It is created on the first
+`freshbooks_auth_url` call, even if the login is never finished, and holds no
+tokens.
 
 Two consequences worth knowing:
 
