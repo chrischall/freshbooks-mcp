@@ -66,4 +66,30 @@ describe('request timeout', () => {
     expect(err.message).toMatch(/did not respond within 30ms to POST /);
     expect(err.message).toMatch(/may have been recorded/i);
   });
+
+  // A refresh that fails slowly (past the deadline) is NOT a timeout of the
+  // API call: the deadline signal never reached the token request. Reporting it
+  // as one drops the refresh failure's recovery hint and, for a write, falsely
+  // warns that the write may have been recorded.
+  it('reports a slow refresh failure as the refresh failure, not a timeout', async () => {
+    const fetchImpl = (async (url: string) => {
+      if (String(url).includes('/auth/oauth/token')) {
+        await new Promise((r) => setTimeout(r, 80));
+        return new Response(
+          JSON.stringify({ error: 'invalid_grant', error_description: 'refresh token is invalid' }),
+          { status: 400 },
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new FreshbooksClient({ fetchImpl, storePath: `/tmp/fb-timeout-slow-${process.pid}.json` });
+    const err = await client
+      .accountingWrite('/payments/payments', 'payment', { invoiceid: 5 })
+      .catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).not.toMatch(/did not respond within/);
+    expect(err.message).not.toMatch(/may have been recorded/i);
+    expect(err.message).toMatch(/invalid_grant|refresh/i);
+    expect((err as Error & { hint?: string }).hint ?? '').not.toMatch(/FRESHBOOKS_REQUEST_TIMEOUT_MS/);
+  });
 });

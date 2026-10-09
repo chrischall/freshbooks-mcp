@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import { FreshbooksClient } from '../src/client.js';
 import { registerAuthTools } from '../src/tools/auth.js';
+import { consentRedirect } from './consent-helpers.js';
 
 const ACCESS = 'dummy-local-access-token';
 const REFRESH = 'dummy-local-refresh-token';
@@ -66,7 +67,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     const { fetchImpl, requests } = tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const result = await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const result = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       expect(result.isError).toBeFalsy();
       expect(JSON.stringify(result)).not.toContain(REFRESH);
       expect(JSON.stringify(result)).not.toContain(ACCESS);
@@ -100,7 +101,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     const { fetchImpl, requests } = tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const result = await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const result = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       expect(parseToolResult(result)).toMatchObject({ connected: true });
       expect(JSON.stringify(result)).not.toContain(REFRESH);
       await new FreshbooksClient({ fetchImpl, storePath }).getIdentity();
@@ -115,7 +116,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     const { fetchImpl, requests } = tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       process.env.FRESHBOOKS_CLIENT_ID = 'different-app';
       await expect(new FreshbooksClient({ fetchImpl, storePath }).getIdentity()).rejects.toThrow(/not configured/i);
       expect(requests).toHaveLength(1);
@@ -128,7 +129,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     const { fetchImpl, requests } = tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       process.env.MCP_DATA_DIR = join(directory, 'hosted');
       await expect(new FreshbooksClient({ fetchImpl, storePath }).getIdentity()).rejects.toThrow(/not configured/i);
       expect(requests).toHaveLength(1);
@@ -146,7 +147,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json(body, { status })));
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const result = await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const result = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).not.toContain(ACCESS);
       expect(JSON.stringify(result)).not.toContain(REFRESH);
@@ -160,7 +161,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const result = await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const result = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).toMatch(/could not be saved/);
       expect(JSON.stringify(result)).not.toContain(ACCESS);
@@ -175,7 +176,7 @@ describe('local OAuth credentials stay out of MCP results', () => {
     tokenEndpoint();
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const result = await h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const result = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'dummy-code') });
       expect(parseToolResult(result)).toMatchObject({ refresh_token: REFRESH });
       expect(JSON.stringify(result)).not.toContain(ACCESS);
     } finally {

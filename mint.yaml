@@ -50,6 +50,50 @@ state:
     Persists the saved session/token under $HOME so authentication survives a
     restart. Without it every cold start re-authenticates, which a hosted
     child may be unable to do unaided.
+identity:
+  perUserChild: true
+auth:
+  # Hosted sign-in. Step 1 asks this server for a one-time consent link (its
+  # OAuth `state` is single-use, lives 15 minutes, and is kept under the data
+  # dir so a respawned child still recognises it). Step 2 shows that link as a
+  # button and asks for the whole URL FreshBooks redirects to; its tool call is
+  # a second, harmless freshbooks_auth_url (a step must call a tool, and this
+  # one contacts nothing). The capture exchanges the pasted URL, state and all,
+  # for the refresh token. Written in JSON-compatible flow style so
+  # tests/mint.test.ts can parse it without a YAML dependency.
+  flow:
+    {
+      "steps": [
+        {
+          "tool": "freshbooks_auth_url",
+          "args": {},
+          "carry": ["authorize_url"],
+          "title": "Preparing your FreshBooks sign-in",
+          "description": "Creates a one-time FreshBooks consent link for this connection. Nothing is sent to FreshBooks yet."
+        },
+        {
+          "tool": "freshbooks_auth_url",
+          "args": {},
+          "link": { "from": "authorize_url", "hosts": ["auth.freshbooks.com"], "label": "Sign in to FreshBooks" },
+          "prompt": [
+            {
+              "name": "redirectUrl",
+              "label": "Full address of the page you landed on",
+              "type": "text",
+              "help": "Paste the whole URL from the address bar, starting https://localhost/?code= and including its state. Not just the code. The link works once, for 15 minutes."
+            }
+          ],
+          "title": "Authorise FreshBooks",
+          "description": "Open the sign-in link and approve access in FreshBooks. You are then sent to https://localhost/?code=..., which will FAIL TO LOAD. That is expected. Copy the whole address from the bar and paste it below. The code is single-use: if this is refused, start the connection again from claude.ai rather than re-pasting."
+        }
+      ],
+      "capture": {
+        "tool": "freshbooks_auth_exchange",
+        "args": { "code": { "from": "redirectUrl" } },
+        "path": "refresh_token",
+        "into": "FRESHBOOKS_REFRESH_TOKEN"
+      }
+    }
 egress:
   allow:
     # Only hosts the SERVER process actually fetches. Hosts that appear

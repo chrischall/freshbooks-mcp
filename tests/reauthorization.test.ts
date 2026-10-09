@@ -6,6 +6,7 @@ import { createFileStatePersistence, type BearerTokens } from '@chrischall/mcp-u
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import { createTokenManager, type OAuthConfig } from '../src/auth.js';
 import { registerAuthTools } from '../src/tools/auth.js';
+import { consentRedirect } from './consent-helpers.js';
 
 // Simulate another process committing immediately after this process releases
 // its lock, before TokenManager's awaiting continuation resumes. The lock now
@@ -92,12 +93,13 @@ describe('reauthorization and refresh share one write boundary', () => {
     vi.stubGlobal('fetch', fetchImpl);
     const h = await createTestHarness(registerAuthTools);
     try {
+      const redirect = await consentRedirect(h, 'dummy-code');
       const refresh = createTokenManager(config, { storePath, fetchImpl }).getAccessToken();
       await refreshStarted.promise;
       // Either the fixed path attempts the held lock, or the broken path
       // reaches the token endpoint directly. No timing assumption is needed.
       hooks.beforeLock = () => loginStarted.resolve();
-      const login = h.callTool('freshbooks_auth_exchange', { code: 'dummy-code' });
+      const login = h.callTool('freshbooks_auth_exchange', { code: redirect });
       await loginStarted.promise;
       const exchangedWhileRefreshing = authCalls;
       finishRefresh.resolve();

@@ -30,6 +30,18 @@ function requestTimeoutMs(): number {
   return readIntEnv('FRESHBOOKS_REQUEST_TIMEOUT_MS', { default: DEFAULT_REQUEST_TIMEOUT_MS, min: 1 })!;
 }
 
+/**
+ * True only when `err` is the rejection our deadline signal produced: fetch
+ * (and a body read) reject with the signal's reason, a `TimeoutError`.
+ * Checking `deadline.aborted` alone also matches any failure that merely
+ * happened after the deadline elapsed.
+ */
+function isDeadlineAbort(err: unknown, deadline: AbortSignal): boolean {
+  if (!deadline.aborted) return false;
+  if (err === deadline.reason) return true;
+  return err instanceof Error && err.name === 'TimeoutError';
+}
+
 /** The identifiers FreshBooks hands out. They are NOT interchangeable — see docs/FRESHBOOKS-API.md. */
 export interface Identity {
   identityId: number | null;
@@ -252,9 +264,11 @@ export class FreshbooksClient {
       );
       raw = await res.text();
     } catch (err) {
-      // Only OUR deadline becomes a timeout message; a caller cancellation or a
-      // network error propagates as-is.
-      if (!deadline.aborted) throw err;
+      // Only an error CAUSED by our deadline becomes a timeout message. A caller
+      // cancellation, a network error, or a token refresh that failed slowly
+      // (the deadline never reached it, so it merely elapsed meanwhile)
+      // propagates as-is — keeping its own message and recovery hint.
+      if (!isDeadlineAbort(err, deadline)) throw err;
       const write = method !== 'GET';
       throw new McpToolError(
         `FreshBooks did not respond within ${timeoutMs}ms to ${method} ${path}.` +
