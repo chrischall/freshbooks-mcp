@@ -69,7 +69,8 @@ export function registerEstimateTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, confirmToken }, ctx) => {
+    async (args, ctx) => {
+      const { id, confirmToken } = args;
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_accept_estimate",
         action: "estimate.accept",
@@ -79,6 +80,7 @@ export function registerEstimateTools(
         body: { estimate: { action_accept: true } },
         target: id,
         confirmToken,
+        args,
       });
       if (gate) return gate;
 
@@ -223,7 +225,8 @@ export function registerEstimateTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, confirmToken, fields, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { id, confirmToken, fields, ...rest } = args;
       // Sending mail is freshbooks_send_estimate's job, where the recipients are
       // checked against the client. Letting raw fields do it would bypass that.
       const emailKeys = Object.keys(fields ?? {}).filter((k) =>
@@ -250,6 +253,7 @@ export function registerEstimateTools(
         body: { estimate: payload },
         target: id,
         confirmToken,
+        args,
       });
       if (gate) return gate;
 
@@ -298,7 +302,8 @@ export function registerEstimateTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, email_recipients, subject, body, allow_non_client_recipients, confirmToken }, ctx) => {
+    async (args, ctx) => {
+      const { id, email_recipients, subject, body, allow_non_client_recipients, confirmToken } = args;
       const customized = stripUndefined({ subject, body });
       const payload: Record<string, unknown> = {
         action_email: true,
@@ -325,6 +330,7 @@ export function registerEstimateTools(
         },
         options: { allow_non_client_recipients: allow_non_client_recipients === true },
         confirmToken,
+        args,
       });
       if (gate) return gate;
 

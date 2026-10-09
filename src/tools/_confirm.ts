@@ -31,6 +31,12 @@ export interface ConfirmWriteOptions {
   /** Options that change what the write does without being sent (bound into the token). */
   options?: Record<string, unknown>;
   confirmToken: string | undefined;
+  /**
+   * The tool's validated arguments as the handler received them (mcp-utils drops
+   * `confirmToken`). Bound into both the token and the elicitation acceptance, so an
+   * approval for one set of arguments cannot be replayed against another.
+   */
+  args: Record<string, unknown>;
 }
 
 /**
@@ -61,6 +67,11 @@ export async function confirmWrite(
       details: preview,
       tool: o.tool,
       confirmToken: o.confirmToken,
+      // One OAuth credential and one chosen business per server process, resolved from
+      // env/the token store — there is no per-call principal to bind. Resolving the
+      // accountId here would need a network call before approval, which this gate forbids.
+      account: undefined,
+      args: o.args,
       subject: () => ({
         target: o.target === undefined ? "" : String(o.target),
         payload: {
