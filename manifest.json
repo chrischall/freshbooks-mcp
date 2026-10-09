@@ -47,7 +47,7 @@
   "tools": [
     {
       "name": "freshbooks_auth_url",
-      "description": "Get the FreshBooks consent URL to authorise this connection"
+      "description": "Get the FreshBooks consent URL to authorize this connection"
     },
     {
       "name": "freshbooks_auth_exchange",

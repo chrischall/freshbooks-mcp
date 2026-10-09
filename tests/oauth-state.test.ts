@@ -3,7 +3,7 @@
 // to THEIR FreshBooks account, and every later create_client/create_invoice
 // puts the user's customer data into it. (chrischall/fleet-audit#465)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
@@ -23,7 +23,25 @@ const CONFIG: OAuthConfig = {
   refreshToken: '',
 };
 
-beforeEach(() => resetAuthStatesForTesting());
+// Issued states are persisted beside the token store (or under MCP_DATA_DIR
+// when hosted), so every test points that at a private temp directory.
+let stateDir: string;
+const savedStore = process.env.FRESHBOOKS_TOKEN_STORE;
+const savedDataDir = process.env.MCP_DATA_DIR;
+beforeEach(() => {
+  stateDir = mkdtempSync(join(tmpdir(), 'freshbooks-oauth-state-unit-'));
+  process.env.FRESHBOOKS_TOKEN_STORE = join(stateDir, 'session.json');
+  delete process.env.MCP_DATA_DIR;
+  resetAuthStatesForTesting();
+});
+afterEach(() => {
+  resetAuthStatesForTesting();
+  if (savedStore === undefined) delete process.env.FRESHBOOKS_TOKEN_STORE;
+  else process.env.FRESHBOOKS_TOKEN_STORE = savedStore;
+  if (savedDataDir === undefined) delete process.env.MCP_DATA_DIR;
+  else process.env.MCP_DATA_DIR = savedDataDir;
+  rmSync(stateDir, { recursive: true, force: true });
+});
 
 describe('authorizeUrl state', () => {
   it('carries the state it is given', () => {
@@ -52,12 +70,12 @@ describe('verifyAuthorizationResponse', () => {
     );
   });
 
-  it('refuses a redirect URL with no state once a consent URL was issued', () => {
+  it('refuses a redirect URL with no state', () => {
     issueAuthState();
     expect(() => verifyAuthorizationResponse('https://localhost/?code=c', CONFIG)).toThrow(/state/i);
   });
 
-  it('refuses a bare code once a consent URL was issued — it cannot be bound', () => {
+  it('refuses a bare code — it carries no state, so it cannot be bound', () => {
     issueAuthState();
     expect(() => verifyAuthorizationResponse('barecode', CONFIG)).toThrow(/whole redirect URL/i);
   });
@@ -97,8 +115,72 @@ describe('verifyAuthorizationResponse', () => {
     expect((err as Error & { hint?: string }).hint).toMatch(/freshbooks_auth_url/);
   });
 
-  it('still accepts a bare code when no consent URL was issued here', () => {
-    expect(() => verifyAuthorizationResponse('barecode', CONFIG)).not.toThrow();
+  // The attack in fleet-audit#465 starts in a FRESH session: the attacker
+  // opens the public consent URL themselves (no state), and sends the victim
+  // the redirect URL. Nothing having been issued here must not make it pass.
+  it('refuses a bare code even when no consent URL was issued here', () => {
+    let err: unknown;
+    try {
+      verifyAuthorizationResponse('barecode', CONFIG);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as Error).message).toMatch(/whole redirect URL/i);
+    expect((err as Error & { hint?: string }).hint).toMatch(/freshbooks_auth_url/);
+  });
+
+  it('refuses a state-less redirect URL even when no consent URL was issued here', () => {
+    let err: unknown;
+    try {
+      verifyAuthorizationResponse('https://localhost/?code=attackers-code', CONFIG);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as Error).message).toMatch(/state/i);
+    expect((err as Error & { hint?: string }).hint).toMatch(/freshbooks_auth_url/);
+  });
+});
+
+describe('issued states survive a restart', () => {
+  it('accepts a state issued before the process restarted, then consumes it', async () => {
+    const state = issueAuthState();
+    // A fresh module instance is what a respawned child has: empty memory.
+    vi.resetModules();
+    const fresh = await import('../src/auth.js');
+    expect(() => fresh.verifyAuthorizationResponse(`https://localhost/?code=c&state=${state}`, CONFIG)).not.toThrow();
+    vi.resetModules();
+    const again = await import('../src/auth.js');
+    expect(() => again.verifyAuthorizationResponse(`https://localhost/?code=c&state=${state}`, CONFIG)).toThrow(
+      /state/i,
+    );
+  });
+
+  it('keeps hosted states under MCP_DATA_DIR, privately, as digests only', async () => {
+    const dataDir = join(stateDir, 'hosted');
+    process.env.MCP_DATA_DIR = dataDir;
+    const state = issueAuthState();
+    const file = join(dataDir, 'freshbooks-oauth-state.json');
+    expect(existsSync(file)).toBe(true);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readFileSync(file, 'utf8')).not.toContain(state);
+    vi.resetModules();
+    const fresh = await import('../src/auth.js');
+    expect(() => fresh.verifyAuthorizationResponse(`https://localhost/?code=c&state=${state}`, CONFIG)).not.toThrow();
+  });
+
+  it('still binds the round-trip in memory when the state file cannot be written', () => {
+    // A directory where the file should be makes every write fail.
+    process.env.FRESHBOOKS_TOKEN_STORE = join(stateDir, 'blocked', 'session.json');
+    rmSync(join(stateDir, 'blocked'), { recursive: true, force: true });
+    mkdirSync(join(stateDir, 'blocked', 'session.json.oauth-state.json'), { recursive: true });
+    const state = issueAuthState();
+    expect(() => verifyAuthorizationResponse(`https://localhost/?code=c&state=${state}`, CONFIG)).not.toThrow();
+  });
+
+  it('ignores a corrupt state file rather than failing the login', () => {
+    writeFileSync(join(stateDir, 'session.json.oauth-state.json'), 'not json');
+    const state = issueAuthState();
+    expect(() => verifyAuthorizationResponse(`https://localhost/?code=c&state=${state}`, CONFIG)).not.toThrow();
   });
 });
 

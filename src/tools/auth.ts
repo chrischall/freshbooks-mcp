@@ -31,7 +31,7 @@ export function registerAuthTools(server: McpServer): void {
     "freshbooks_auth_url",
     {
       description:
-        "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL to freshbooks_auth_exchange (its state parameter binds the approval to this session). Read-only; contacts nothing.",
+        "Get the FreshBooks consent URL to authorize this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL to freshbooks_auth_exchange (its state parameter binds the approval to this server; valid 15 minutes, single-use). Read-only; contacts nothing.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -52,12 +52,12 @@ export function registerAuthTools(server: McpServer): void {
     "freshbooks_auth_exchange",
     {
       description:
-        "Complete FreshBooks authorization. Local sessions save the credentials privately and return only status; hosted sessions return the refresh token to the host's credential-capture flow. Pass the whole redirect URL: its state must match the consent URL freshbooks_auth_url issued. The code is SINGLE-USE — if this fails, authorise again rather than retrying it.",
+        "Complete FreshBooks authorization. Local sessions save the credentials privately and return only status; hosted sessions return the refresh token to the host's credential-capture flow. Pass the whole redirect URL: its state must match a consent URL freshbooks_auth_url issued, so a bare code is refused. The code is SINGLE-USE — if this fails, authorize again rather than retrying it.",
       inputSchema: z.object({
         code: z
           .string()
           .describe(
-            "The entire redirect URL you were sent to after approving (a bare ?code= value is only accepted if no consent URL was issued in this session).",
+            "The entire redirect URL you were sent to after approving, including its state parameter. A bare ?code= value is refused.",
           ),
       }),
       // Destructive: it spends a single-use authorization code and replaces the saved
@@ -68,7 +68,7 @@ export function registerAuthTools(server: McpServer): void {
       const result = readBootstrapConfig();
       if ("error" in result) return minifiedResult({ error: result.error });
       // Before the code is spent: refuse a paste that is not the redirect from
-      // the consent URL this session issued (fleet-audit#465).
+      // a consent URL this server issued (fleet-audit#465).
       verifyAuthorizationResponse(code, result.config);
       if (!isHosted()) {
         await authorizeLocally(result.config, code);

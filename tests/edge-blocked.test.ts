@@ -7,6 +7,7 @@ import { createTestHarness, parseToolResult } from '@chrischall/mcp-utils/test';
 import { exchangeAuthorizationCode } from '../src/auth.js';
 import { FreshbooksClient } from '../src/client.js';
 import { registerAuthTools } from '../src/tools/auth.js';
+import { consentRedirect } from './consent-helpers.js';
 import { registerHealthcheckTools } from '../src/tools/healthcheck.js';
 
 /**
@@ -123,7 +124,7 @@ describe('a CDN/WAF block on the authorization-code exchange reads as edge_block
     vi.stubGlobal('fetch', vi.fn(async () => tokenOk()));
     const h = await createTestHarness((server) => registerAuthTools(server));
     try {
-      const first = await h.callTool('freshbooks_auth_exchange', { code: 'code-1' });
+      const first = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'code-1') });
       expect(first.isError).toBeFalsy();
       const before = readFileSync(process.env.FRESHBOOKS_TOKEN_STORE as string, 'utf8');
       expect(before).toContain('rt2');
@@ -131,7 +132,7 @@ describe('a CDN/WAF block on the authorization-code exchange reads as edge_block
       // A re-authorization that the edge refuses must name the block and leave
       // the saved credential exactly as it was.
       vi.stubGlobal('fetch', vi.fn(async () => blocked()));
-      const res = await h.callTool('freshbooks_auth_exchange', { code: 'code-2' });
+      const res = await h.callTool('freshbooks_auth_exchange', { code: await consentRedirect(h, 'code-2') });
       expect(res.isError).toBe(true);
       const text = JSON.stringify(res);
       expect(text).toMatch(/CDN\/WAF \(CloudFront\)/);

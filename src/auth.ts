@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { EdgeBlockedError, McpToolError, detectEdgeBlock, expandPath, readEnvVar } from '@chrischall/mcp-utils';
 import {
   TokenManager,
@@ -186,7 +186,7 @@ function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse, file
   const expiresAt = (tokens.created_at + tokens.expires_in) * 1000;
   if (typeof tokens.created_at !== 'number' || typeof tokens.expires_in !== 'number'
     || !Number.isFinite(expiresAt) || tokens.expires_in <= 0) {
-    throw new McpToolError('FreshBooks returned invalid token expiry information. Authorise again.');
+    throw new McpToolError('FreshBooks returned invalid token expiry information. Authorize again.');
   }
   try {
     // An existing env seed can remain configured during reauthorization. Bind
@@ -198,7 +198,7 @@ function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse, file
     });
   } catch {
     throw new McpToolError('FreshBooks authorization succeeded, but its credentials could not be saved.', {
-      hint: 'Check the token-store path and permissions, then authorise again with a new code. No token was returned to chat.',
+      hint: 'Check the token-store path and permissions, then authorize again with a new code. No token was returned to chat.',
     });
   }
 }
@@ -212,7 +212,7 @@ function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse, file
  * opaque `invalid_client`.
  */
 /**
- * The consent URL a person opens to authorise this app.
+ * The consent URL a person opens to authorize this app.
  *
  * Carries the client ID and redirect only — never the secret. This URL goes
  * into a browser, so anything in it lands in history and in every proxy along
@@ -229,34 +229,96 @@ export function authorizeUrl(config: OAuthConfig, state?: string): string {
 }
 
 /**
- * OAuth `state` values this process has handed out, each with its expiry.
+ * OAuth `state` values `freshbooks_auth_url` has handed out, each with its
+ * expiry.
  *
- * Binds a consent round-trip to the session that started it. Without one, a
+ * Binds a consent round-trip to the server that started it. Without one, a
  * socially engineered paste of SOMEONE ELSE's redirect URL would connect this
  * server to their FreshBooks account, and the user's later writes would put
- * customer data into it (fleet-audit#465). Held in memory on purpose: a state
- * outliving the process that issued it is exactly the unbound case.
+ * customer data into it (fleet-audit#465).
+ *
+ * Persisted, not just held in memory: on mcp-host the person approves in a
+ * browser between the two tool calls, and the per-user child can be evicted
+ * and respawned meanwhile. A state that died with the process would refuse an
+ * honest login. The file sits under `MCP_DATA_DIR` when hosted and beside the
+ * token store locally, is written 0600, and holds only SHA-256 digests — a
+ * reader learns nothing it could put in a redirect URL. Memory remains the
+ * fallback, so an unwritable file degrades to the single-process behaviour
+ * rather than failing the login.
  */
 const AUTH_STATE_TTL_MS = 15 * 60_000;
-const pendingAuthStates = new Map<string, number>();
+const inMemoryAuthStates = new Map<string, number>();
 
-function pruneAuthStates(now: number): void {
-  for (const [state, expiresAt] of pendingAuthStates) {
-    if (expiresAt <= now) pendingAuthStates.delete(state);
+function authStateFile(): string {
+  const dataDir = readEnvVar('MCP_DATA_DIR');
+  return dataDir
+    ? join(expandPath(dataDir), 'freshbooks-oauth-state.json')
+    : `${defaultStorePath()}.oauth-state.json`;
+}
+
+function stateDigest(state: string): string {
+  return createHash('sha256').update(state).digest('base64url');
+}
+
+/** Every unexpired issued state digest, from the file and from memory. */
+function loadAuthStates(now: number): Map<string, number> {
+  const states = new Map(inMemoryAuthStates);
+  try {
+    const raw: unknown = JSON.parse(readFileSync(authStateFile(), 'utf8'));
+    if (raw && typeof raw === 'object') {
+      for (const [digest, expiresAt] of Object.entries(raw)) {
+        if (typeof expiresAt === 'number') states.set(digest, expiresAt);
+      }
+    }
+  } catch {
+    // Missing or unreadable: memory alone still binds this process's logins.
+  }
+  for (const [digest, expiresAt] of states) {
+    if (expiresAt <= now) states.delete(digest);
+  }
+  return states;
+}
+
+function saveAuthStates(states: Map<string, number>): void {
+  inMemoryAuthStates.clear();
+  for (const [digest, expiresAt] of states) inMemoryAuthStates.set(digest, expiresAt);
+  const file = authStateFile();
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    writeFileSync(temp, JSON.stringify(Object.fromEntries(states)), { mode: 0o600 });
+    renameSync(temp, file);
+  } catch {
+    // Unwritable: fall back to memory (see above) and leave no stray temp file.
+    rmSync(temp, { force: true });
   }
 }
 
 /** Mint and remember a fresh `state` for one consent URL. */
 export function issueAuthState(now: number = Date.now()): string {
-  pruneAuthStates(now);
+  const states = loadAuthStates(now);
   const state = randomBytes(24).toString('base64url');
-  pendingAuthStates.set(state, now + AUTH_STATE_TTL_MS);
+  states.set(stateDigest(state), now + AUTH_STATE_TTL_MS);
+  saveAuthStates(states);
   return state;
 }
 
-/** Test seam: forget every issued state. */
+/** Spend an issued state. False when it was never issued, expired or already used. */
+function consumeAuthState(state: string, now: number): boolean {
+  const states = loadAuthStates(now);
+  if (!states.delete(stateDigest(state))) return false;
+  saveAuthStates(states);
+  return true;
+}
+
+/** Test seam: forget every issued state, in memory and on disk. */
 export function resetAuthStatesForTesting(): void {
-  pendingAuthStates.clear();
+  inMemoryAuthStates.clear();
+  try {
+    rmSync(authStateFile(), { force: true });
+  } catch {
+    // Not a removable file (a test may have planted a directory there).
+  }
 }
 
 function sameRedirect(url: URL, redirectUri: string): boolean {
@@ -270,24 +332,24 @@ function sameRedirect(url: URL, redirectUri: string): boolean {
 }
 
 /**
- * Check what was pasted belongs to a consent round-trip THIS session started,
+ * Check what was pasted is the redirect from a consent URL THIS server issued,
  * BEFORE the code is spent at FreshBooks.
  *
- * - A pasted URL must be this connection's redirect URI (origin and path).
- * - Once `freshbooks_auth_url` has issued a state, only the redirect URL
- *   carrying that state is accepted — a bare code carries none, so it cannot be
- *   bound and is refused. A matched state is consumed (single-use).
- * - A URL carrying a state this process never issued (or that expired) is
- *   refused: it is a foreign or stale round-trip either way.
- * - With nothing issued here and no state pasted, it is accepted as before:
- *   the code was minted outside this session's consent URL.
+ * - It must be the whole redirect URL. A bare code carries no state, so it
+ *   cannot be bound and is always refused.
+ * - The URL must be this connection's redirect URI (origin and path).
+ * - It must carry a state `freshbooks_auth_url` issued, unexpired and unused.
+ *   A matched state is consumed (single-use).
+ *
+ * There is deliberately no "nothing was issued, so let it through" case: the
+ * attack in fleet-audit#465 is run against a FRESH session, with a redirect
+ * URL the attacker got by opening the public consent URL themselves.
  */
 export function verifyAuthorizationResponse(
   input: string,
   config: OAuthConfig,
   now: number = Date.now(),
 ): void {
-  pruneAuthStates(now);
   const trimmed = (input ?? '').trim();
   let url: URL | null = null;
   if (trimmed.includes('://')) {
@@ -297,38 +359,36 @@ export function verifyAuthorizationResponse(
       url = null;
     }
   }
-  const restart = 'Run freshbooks_auth_url again, approve, and paste the whole redirect URL you land on.';
-  if (url !== null && !sameRedirect(url, config.redirectUri)) {
-    throw new McpToolError(
-      `That URL is not this connection's redirect URI (${config.redirectUri}), so it is not a consent response for this session.`,
-      { hint: restart },
-    );
-  }
-  const state = url?.searchParams.get('state') ?? null;
-  if (pendingAuthStates.size === 0) {
-    if (state === null) return;
-    throw new McpToolError(
-      'That redirect URL carries an OAuth state this session did not issue (or it expired).',
-      { hint: restart },
-    );
-  }
+  const restart = 'Run freshbooks_auth_url, open the URL it returns, approve, and paste the whole redirect URL you land on.';
   if (url === null) {
     throw new McpToolError(
-      'Paste the whole redirect URL, not just the code: its state parameter is what proves the approval came from the consent URL this session issued.',
+      'Paste the whole redirect URL, not just the code: its state parameter is what proves the approval came from a consent URL this server issued. Nothing was exchanged.',
       { hint: restart },
     );
   }
-  if (state === null || !pendingAuthStates.has(state)) {
+  if (!sameRedirect(url, config.redirectUri)) {
     throw new McpToolError(
-      'That redirect URL\'s OAuth state does not match the consent URL this session issued, so it may be someone else\'s authorisation. Nothing was exchanged.',
+      `That URL is not this connection's redirect URI (${config.redirectUri}), so it is not a consent response for this server. Nothing was exchanged.`,
       { hint: restart },
     );
   }
-  pendingAuthStates.delete(state);
+  const state = url.searchParams.get('state');
+  if (state === null) {
+    throw new McpToolError(
+      'That redirect URL carries no OAuth state, so it cannot be tied to a consent URL this server issued and may be someone else\'s authorization. Nothing was exchanged.',
+      { hint: restart },
+    );
+  }
+  if (!consumeAuthState(state, now)) {
+    throw new McpToolError(
+      'That redirect URL\'s OAuth state does not match a consent URL this server issued (or it expired, or was already used), so it may be someone else\'s authorization. Nothing was exchanged.',
+      { hint: restart },
+    );
+  }
 }
 
 /**
- * Pull the authorisation code out of whatever the person pasted.
+ * Pull the authorization code out of whatever the person pasted.
  *
  * They paste the whole redirect URL far more often than the bare code, because
  * the bare code is the awkward thing to isolate — the browser hands them a URL.
@@ -354,14 +414,14 @@ export function extractAuthorizationCode(input: string): string {
     const err = url.searchParams.get('error');
     throw new McpToolError(
       `That URL carries no ?code= parameter${err ? ` (it says error=${err})` : ''}.`,
-      { hint: 'Authorise again and paste the URL you land on, which contains ?code=…' },
+      { hint: 'Authorize again and paste the URL you land on, which contains ?code=…' },
     );
   }
   return code;
 }
 
 /**
- * Exchange an authorisation code for tokens — the ONE step that mints a
+ * Exchange an authorization code for tokens — the ONE step that mints a
  * refresh token. Everything afterwards rotates it.
  *
  * Form-encoded, not JSON: that is what FreshBooks' own SDK posts and what the
@@ -396,7 +456,7 @@ export async function exchangeAuthorizationCode(
     // say so rather than sending the person round the consent flow again.
     throwIfEdgeBlocked(res, raw, 'POST', '/auth/oauth/token');
     throw new McpToolError(`FreshBooks returned a non-JSON token response (HTTP ${res.status}).`, {
-      hint: 'Usually an outage or a proxy in front of the API. Authorise again for a new code.',
+      hint: 'Usually an outage or a proxy in front of the API. Authorize again for a new code.',
     });
   }
 
@@ -408,7 +468,7 @@ export async function exchangeAuthorizationCode(
     const detail = typeof parsed.error === 'string' && knownErrors.includes(parsed.error)
       ? parsed.error : `HTTP ${res.status}`;
     // An authorization code is SINGLE-USE. Saying so is the difference between
-    // a person authorising again and a person retrying a spent code forever.
+    // a person authorizing again and a person retrying a spent code forever.
     throw new McpToolError(`FreshBooks refused the authorization code: ${detail}`, {
       hint:
         'An authorization code is single-use and short-lived — this one is now spent, ' +
@@ -418,7 +478,7 @@ export async function exchangeAuthorizationCode(
 
   if (typeof parsed.refresh_token !== 'string' || !parsed.refresh_token) {
     throw new McpToolError('FreshBooks returned no refresh token for that code.', {
-      hint: 'Without a refresh token the connection cannot outlive the access token. Authorise again.',
+      hint: 'Without a refresh token the connection cannot outlive the access token. Authorize again.',
     });
   }
 

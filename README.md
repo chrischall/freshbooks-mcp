@@ -23,16 +23,20 @@ one-time browser authorization is required.
    - **From the server itself** (no script): set `FRESHBOOKS_CLIENT_ID` and
      `FRESHBOOKS_CLIENT_SECRET`, start it, then call `freshbooks_auth_url`, open
      the URL it returns, approve, and pass the **whole** URL you land on to
-     `freshbooks_auth_exchange`. Its `state` must match the consent URL this
-     session issued (valid 15 minutes, single-use), so a redirect URL from anyone
-     else's authorisation is refused before its code is spent. Local sessions save the tokens directly to
-     `FRESHBOOKS_TOKEN_STORE` and return only a success message. Restart the
-     local MCP server after that message. No token needs to be copied into chat
-     or configuration. Keep the same app credentials and store path after restart.
+     `freshbooks_auth_exchange`. Its `state` must match a consent URL the server
+     issued (valid 15 minutes, single-use), so a bare code, or a redirect URL from
+     anyone else's authorization, is refused before its code is spent. Local
+     sessions save the tokens directly to `FRESHBOOKS_TOKEN_STORE` and return only
+     a success message. Restart the local MCP server after that message. No token
+     needs to be copied into chat or configuration. Keep the same app credentials
+     and store path after restart.
    - **Hosted connections:** mcp-host's `authFlow` still captures the refresh
      token from the exchange response and supplies it through its secret store.
      `MCP_DATA_DIR` identifies this hosted environment. Do not set it for a local
-     coding-agent connection: hosted mode intentionally returns the token.
+     coding-agent connection: hosted mode intentionally returns the token. The
+     flow's prompt must collect the **whole** redirect URL, not just its code.
+     Issued states are kept as digests under `MCP_DATA_DIR`, so a child that is
+     respawned while the person approves can still complete the login.
    - **Legacy/manual setup:** the scripts in
      [`skills/freshbooks-curl`](skills/freshbooks-curl/SKILL.md) print tokens.
      Run them only in a private terminal, never in an agent's captured terminal.
@@ -85,7 +89,7 @@ Restart every local server using the store after reauthorization.
 | Tool | Purpose |
 | --- | --- |
 | `freshbooks_get_identity` | Resolve accountId / businessId / businessUuid |
-| `freshbooks_auth_url` | Get the consent URL to authorise this connection |
+| `freshbooks_auth_url` | Get the consent URL to authorize this connection |
 | `freshbooks_auth_exchange` | Complete authorization; save tokens privately in local sessions or return the refresh token to the hosted auth flow |
 | `freshbooks_healthcheck` | Verify the OAuth credential and FreshBooks reachability; distinguishes "no credential" from "rejected" from "FreshBooks is down" |
 | `freshbooks_list_invoices` / `freshbooks_get_invoice` | Browse and fetch invoices |
