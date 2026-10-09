@@ -27,7 +27,8 @@ fb_state_init() {
     return 1
   fi
   mkdir -p "$(dirname "$FB_STATE")" && chmod 700 "$(dirname "$FB_STATE")"
-  printf '{"refresh_token":"%s","access_token":"","expires_at":0}\n' "$FRESHBOOKS_REFRESH_TOKEN" > "$FB_STATE"
+  # umask in a subshell so the file is owner-only from creation, not after.
+  (umask 077; printf '{"refresh_token":"%s","access_token":"","expires_at":0}\n' "$FRESHBOOKS_REFRESH_TOKEN" > "$FB_STATE")
   chmod 600 "$FB_STATE"
 }
 
@@ -62,13 +63,22 @@ fb_access_token() {
     return 1
   fi
 
-  new_rt=$(printf '%s' "$resp" | jq -r '.refresh_token')
-  expires_in=$(printf '%s' "$resp" | jq -r '.expires_in')
-  created_at=$(printf '%s' "$resp" | jq -r '.created_at')
+  new_rt=$(printf '%s' "$resp" | jq -r '.refresh_token // ""')
+  expires_in=$(printf '%s' "$resp" | jq -r '.expires_in // 0 | numbers')
+  created_at=$(printf '%s' "$resp" | jq -r '.created_at // empty | numbers')
+  [ -n "$created_at" ] || created_at=$now
+  # Writing a missing token as the string "null" would replace the only copy
+  # of a usable credential with garbage — refuse instead, keeping the old state.
+  if [ -z "$new_rt" ] || [ "$new_rt" = "null" ] || [ -z "$expires_in" ] || [ "$expires_in" -le 0 ]; then
+    echo "fb: refresh response carried no refresh token or expiry; state left unchanged." >&2
+    echo "fb: The old token may now be spent. If the next call fails, re-run the bootstrap." >&2
+    return 1
+  fi
 
-  # Persist BEFORE returning: the old token is already dead upstream.
-  jq -n --arg rt "$new_rt" --arg at "$new_at" --argjson exp "$((created_at + expires_in))" \
-    '{refresh_token:$rt, access_token:$at, expires_at:$exp}' > "$FB_STATE.tmp" \
+  # Persist BEFORE returning: the old token is already dead upstream. umask in
+  # a subshell so the temp file holding the tokens is never group/world-readable.
+  (umask 077; jq -n --arg rt "$new_rt" --arg at "$new_at" --argjson exp "$((created_at + expires_in))" \
+    '{refresh_token:$rt, access_token:$at, expires_at:$exp}' > "$FB_STATE.tmp") \
     && chmod 600 "$FB_STATE.tmp" && mv "$FB_STATE.tmp" "$FB_STATE" || {
       echo "fb: REFRESHED BUT COULD NOT PERSIST — the old token is spent. Fix $FB_STATE and re-bootstrap." >&2
       return 1
@@ -91,10 +101,15 @@ fb_curl() {
 # Resolve the three non-interchangeable identifiers. accountId for
 # /accounting/account + /payments/account; businessId for /projects/business +
 # /timetracking/business; businessUuid for /accounting/businesses.
+#
+# business.account_id is observed live as null on real owner accounts, with the
+# usable accountId at roles[].accountid — fall back to it, as the server does.
 fb_ids() {
   fb_curl /auth/api/v1/users/me \
-    | jq '.response.business_memberships[0].business
-          | {accountId: .account_id, businessId: .id, businessUuid: .business_uuid, name}'
+    | jq '.response as $r
+          | ([$r.roles[]?.accountid | select(. != null)][0]) as $roleAcct
+          | $r.business_memberships[0].business
+          | {accountId: (.account_id // $roleAcct), businessId: .id, businessUuid: .business_uuid, name}'
 }
 
 fb_account_id() { fb_ids | jq -r '.accountId'; }
