@@ -326,6 +326,20 @@ describe('business-scoped families (projects / timetracking / comments)', () => 
 
     await expect(c.businessGet('projects', 'projects', 9, 'project')).rejects.toThrow(/Project not found/);
   });
+
+  // A 200 whose body lacks the single key is a miss, not a record: hand back null
+  // like accountingGet does, never the raw envelope. (chrischall/fleet-audit#847)
+  it.each([
+    ['an empty body', {}],
+    ['a meta-only envelope', { meta: { total: 0 } }],
+  ])('returns null when the single key is absent from %s', async (_label, body) => {
+    const c = clientWith((url) => {
+      if (url.includes('/users/me')) return new Response(JSON.stringify(identity), { status: 200 });
+      return new Response(JSON.stringify(body), { status: 200 });
+    }, '/tmp/fb-biz-4.json');
+
+    await expect(c.businessGet('projects', 'projects', 9, 'project')).resolves.toBeNull();
+  });
 });
 
 describe('visibility-filtered lists (live-observed)', () => {

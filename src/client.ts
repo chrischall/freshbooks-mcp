@@ -648,7 +648,9 @@ export class FreshbooksClient {
     singleKey: string,
   ): Promise<unknown> {
     const result = await this.business(family, `${resourcePath}/${encodeURIComponent(String(id))}`);
-    return result[singleKey] ?? result ?? null;
+    // Like accountingGet: a body without the single key is a miss, so return null and let
+    // the caller name it — never the raw envelope, which reads as an (empty) record.
+    return result[singleKey] ?? null;
   }
 
   async businessWrite(
