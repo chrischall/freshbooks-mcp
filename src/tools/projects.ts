@@ -68,6 +68,7 @@ export function registerProjectTools(
     {
       description:
         "Create a project. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         title: z.string().describe("Project title"),
         client_id: z
@@ -156,6 +157,7 @@ export function registerProjectTools(
     {
       description:
         "Log a time entry. Duration is in SECONDS. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         duration: z
           .number()

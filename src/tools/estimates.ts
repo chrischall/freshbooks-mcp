@@ -4,6 +4,7 @@ import { McpToolError, minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { WrongIdentifierError } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
+import { assertNonEmptyUpdate } from "./_payload.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
 import {
@@ -58,6 +59,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Idempotent: an estimate already accepted or invoiced is returned unchanged " +
         "with changed: false and no write is sent. Returns the re-fetched estimate.",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z
           .number()
@@ -130,6 +132,7 @@ export function registerEstimateTools(
       // means "an executable write, behind a gate", so offering it here would invite a
       // retry through the confirmation flow in the belief that decline exists and is
       // merely gated.
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
       }),
@@ -165,6 +168,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Supplying lines REPLACES the whole line set — include each existing " +
         "line's lineid to keep it. Returns the re-fetched estimate.",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
         notes: z.string().optional().describe("Notes shown on the estimate"),
@@ -232,16 +236,11 @@ export function registerEstimateTools(
         );
       }
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
-      if (Object.keys(payload).length === 0) {
-        // An empty PUT is a write that reports success while changing nothing — exactly
-        // the "assume success from a 200" failure these tools are meant to rule out.
-        throw new McpToolError(
-          `No fields supplied, so there is nothing to update on estimate ${id}.`,
-          {
-            hint: "Pass at least one field (notes, terms, lines, presentation, …) or a raw `fields` object.",
-          },
-        );
-      }
+      assertNonEmptyUpdate(
+        payload,
+        `estimate ${id}`,
+        "Pass at least one field (notes, terms, lines, presentation, …) or a raw `fields` object.",
+      );
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_update_estimate",
         action: "estimate.update",

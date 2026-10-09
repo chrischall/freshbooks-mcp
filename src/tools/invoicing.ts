@@ -4,6 +4,7 @@ import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
+import { assertNonEmptyUpdate } from "./_payload.js";
 import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
 
 import { ACCOUNTING_RESOURCES } from "../resources.js";
@@ -87,6 +88,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create a client (customer) in FreshBooks. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         email: z.string().optional().describe("Client's email address"),
         fname: z.string().optional().describe("First name"),
@@ -135,6 +137,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create an invoice for a client. Created invoices start as drafts. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         customerid: z
           .number()
@@ -217,6 +220,7 @@ export function registerInvoicingTools(
       }),
     },
     async ({ id, fields, allow_non_client_recipients, confirmToken }, ctx) => {
+      assertNonEmptyUpdate(fields, `invoice ${id}`, 'Pass at least one field in `fields`, e.g. {"notes": "..."}.');
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_update_invoice",
         action: "invoice.update",
@@ -259,6 +263,7 @@ export function registerInvoicingTools(
     {
       description:
         "Record a payment against an invoice. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         invoiceid: z
           .number()

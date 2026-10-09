@@ -427,7 +427,28 @@ export async function exchangeRefreshToken(
       hint: recoveryHint(),
     });
   }
-  return parsed as TokenResponse;
+  // The old refresh token is spent the moment FreshBooks answers, so a reply
+  // missing its successor or a usable expiry must fail loudly here: persisting
+  // it would write a record the next start rejects, falling back to the spent
+  // env token and locking the account out.
+  if (typeof parsed.refresh_token !== 'string' || !parsed.refresh_token) {
+    throw new McpToolError('FreshBooks returned no refresh token on refresh.', { hint: recoveryHint() });
+  }
+  if (typeof parsed.expires_in !== 'number' || !Number.isFinite(parsed.expires_in) || parsed.expires_in <= 0) {
+    throw new McpToolError('FreshBooks returned invalid token expiry information on refresh.', {
+      hint: recoveryHint(),
+    });
+  }
+  const createdAt =
+    typeof parsed.created_at === 'number' && Number.isFinite(parsed.created_at)
+      ? parsed.created_at
+      : Math.floor(Date.now() / 1000);
+  return {
+    access_token: parsed.access_token,
+    refresh_token: parsed.refresh_token,
+    expires_in: parsed.expires_in,
+    created_at: createdAt,
+  };
 }
 
 /**

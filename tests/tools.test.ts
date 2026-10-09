@@ -162,6 +162,27 @@ describe('generic record accessor', () => {
     await h.close();
   });
 
+  // encodeURIComponent leaves '.' and '..' alone, and URL normalisation resolves
+  // them — `/invoices/invoices/..` becomes `/invoices/`, a different endpoint than
+  // the resource enum allows. (chrischall/fleet-audit#466)
+  it.each([['..'], ['.'], ['12abc'], [' 12']])('get_record refuses non-numeric string id %j', async (id) => {
+    const { requests, client } = trackedClient();
+    const h = await createTestHarness((s) => registerRecordTools(s, client));
+    const res = await h.callTool('freshbooks_get_record', { resource: 'invoices', id });
+    expect(res.isError).toBe(true);
+    expect(requests).toHaveLength(0);
+    await h.close();
+  });
+
+  it('get_record still accepts a numeric id carried as text', async () => {
+    const { requests, client } = trackedClient();
+    const h = await createTestHarness((s) => registerRecordTools(s, client));
+    const res = await h.callTool('freshbooks_get_record', { resource: 'invoices', id: '42' });
+    expect(res.isError).toBeFalsy();
+    expect(requests.some((r) => r.url.endsWith('/accounting/account/acct/invoices/invoices/42'))).toBe(true);
+    await h.close();
+  });
+
   it('rejects an unknown resource name at the schema boundary', async () => {
     const { requests, client } = trackedClient();
     const h = await createTestHarness((s) => registerRecordTools(s, client));
@@ -272,5 +293,19 @@ describe('invoice recipient guard', () => {
       destructiveHint: true,
       openWorldHint: true,
     });
+  });
+});
+
+// An empty PUT is a write that reports success while changing nothing;
+// update_estimate already refuses one. (chrischall/fleet-audit#460)
+describe('update_invoice empty payload', () => {
+  it('refuses an empty fields object and sends nothing', async () => {
+    const { requests, client } = trackedClient();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    const res = await callConfirmed(h, 'freshbooks_update_invoice', { id: 5, fields: {} });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toMatch(/nothing to update/i);
+    expect(requests).toHaveLength(0);
+    await h.close();
   });
 });

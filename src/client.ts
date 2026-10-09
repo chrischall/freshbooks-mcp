@@ -1,4 +1,11 @@
-import { McpToolError, buildQueryString, readEnvVar, truncateErrorMessage } from '@chrischall/mcp-utils';
+import {
+  McpToolError,
+  buildQueryString,
+  readEnvVar,
+  readIntEnv,
+  truncateErrorMessage,
+  withAmbientCancellation,
+} from '@chrischall/mcp-utils';
 import type { TokenManager } from '@chrischall/mcp-utils/session';
 import {
   createTokenManager,
@@ -11,6 +18,17 @@ import {
 } from './auth.js';
 
 const BASE_URL = 'https://api.freshbooks.com';
+
+/**
+ * Per-request deadline. Without one a stalled connection holds the tool call
+ * open for the host's whole deadline (fleet-audit#1006). Overridable via
+ * FRESHBOOKS_REQUEST_TIMEOUT_MS; read per request so a test or operator change
+ * applies without a restart.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+function requestTimeoutMs(): number {
+  return readIntEnv('FRESHBOOKS_REQUEST_TIMEOUT_MS', { default: DEFAULT_REQUEST_TIMEOUT_MS, min: 1 })!;
+}
 
 /** The identifiers FreshBooks hands out. They are NOT interchangeable — see docs/FRESHBOOKS-API.md. */
 export interface Identity {
@@ -209,20 +227,44 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<unknown> {
-    const token = await this.tokens().getAccessToken();
     const method = init.method ?? 'GET';
-    const res = await this.fetchImpl(`${BASE_URL}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Api-Version': 'alpha',
-        Accept: 'application/json',
-        ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-    });
+    const timeoutMs = requestTimeoutMs();
+    const deadline = AbortSignal.timeout(timeoutMs);
+    let res: Response;
+    let raw: string;
+    try {
+      // withAuth replays once after a forced refresh on a 401: FreshBooks can
+      // invalidate an access token before its expiresAt (revocation,
+      // reauthorisation, clock skew) while the refresh token is still good.
+      // A 401 means the request was not processed, so a replayed write is safe.
+      res = await this.tokens().withAuth((token) =>
+        this.fetchImpl(`${BASE_URL}${path}`, {
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Api-Version': 'alpha',
+            Accept: 'application/json',
+            ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          },
+          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+          signal: withAmbientCancellation(deadline),
+        }),
+      );
+      raw = await res.text();
+    } catch (err) {
+      // Only OUR deadline becomes a timeout message; a caller cancellation or a
+      // network error propagates as-is.
+      if (!deadline.aborted) throw err;
+      const write = method !== 'GET';
+      throw new McpToolError(
+        `FreshBooks did not respond within ${timeoutMs}ms to ${method} ${path}.` +
+          (write
+            ? ' The write may have been recorded anyway — check the record (list or get it) before retrying, or it could be applied twice.'
+            : ''),
+        { hint: 'FreshBooks may be slow or unreachable. Set FRESHBOOKS_REQUEST_TIMEOUT_MS to allow longer.' },
+      );
+    }
 
-    const raw = await res.text();
     let parsed: unknown = null;
     if (raw !== '') {
       try {
