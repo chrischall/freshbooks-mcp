@@ -15,7 +15,7 @@ export function registerAccountTools(
         "tracking) and businessUuid. The three are not interchangeable — using the wrong one returns " +
         "a 404 rather than a useful error. When the identity belongs to several businesses, " +
         "`businesses` lists them all; unless FRESHBOOKS_BUSINESS_ID picks one, writes are refused.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async () => minifiedResult(await client.getIdentity()),
   );

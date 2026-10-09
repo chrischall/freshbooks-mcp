@@ -23,7 +23,7 @@ env:
     required: false
     help: >-
       Registered redirect URI; required on refresh calls too (default
-      https://localhost/callback)
+      https://localhost)
   - name: FRESHBOOKS_TOKEN_STORE
     secret: true
     required: false

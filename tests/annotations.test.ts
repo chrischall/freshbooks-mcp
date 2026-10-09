@@ -19,6 +19,21 @@ describe('tool annotations', () => {
     expect(missing).toEqual([]);
   });
 
+  it('never marks a read-only tool destructive', () => {
+    const wrong = [...tools]
+      .filter(([, c]) => c.annotations?.readOnlyHint === true && c.annotations.destructiveHint === true)
+      .map(([n]) => n);
+    expect(wrong).toEqual([]);
+  });
+
+  it('gives every tool an explicit openWorldHint', () => {
+    const missing = [...tools].filter(([, c]) => typeof c.annotations?.openWorldHint !== 'boolean').map(([n]) => n);
+    expect(missing).toEqual([]);
+  });
+
+  // The inverse test: a write is additive only if a later call in this tool set
+  // restores the prior state. Nothing here deletes, voids or archives a client,
+  // invoice, payment, expense, project or time entry, so every create is destructive.
   it.each([
     'freshbooks_create_client',
     'freshbooks_create_invoice',
@@ -26,8 +41,16 @@ describe('tool annotations', () => {
     'freshbooks_create_expense',
     'freshbooks_create_project',
     'freshbooks_create_time_entry',
-  ])('%s is an additive write', (name) => {
-    expect(tools.get(name)?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+  ])('%s has no inverse, so it is destructive', (name) => {
+    expect(tools.get(name)?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+  });
+
+  it('auth_exchange spends a single-use code, so it is destructive', () => {
+    expect(tools.get('freshbooks_auth_exchange')?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    });
   });
 
   it.each(['freshbooks_update_invoice', 'freshbooks_update_estimate', 'freshbooks_send_estimate'])(
@@ -45,7 +68,10 @@ describe('tool annotations', () => {
     });
   });
 
-  it('decline_estimate never sends a request, so it is read-only', () => {
-    expect(tools.get('freshbooks_decline_estimate')?.annotations).toMatchObject({ readOnlyHint: true });
-  });
+  it.each(['freshbooks_decline_estimate', 'freshbooks_auth_url'])(
+    '%s never sends a request, so it is read-only and closed-world',
+    (name) => {
+      expect(tools.get(name)?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    },
+  );
 });
