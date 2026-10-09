@@ -43,7 +43,7 @@ export function registerAuthTools(server: McpServer): void {
       return minifiedResult({
         authorize_url: authorizeUrl(result.config, issueAuthState()),
         redirect_uri: result.config.redirectUri,
-        next: "Open authorize_url, approve, then pass the URL you land on to freshbooks_auth_exchange.",
+        next: "Open authorize_url, approve, then pass the whole URL you land on (including its state) to freshbooks_auth_exchange.",
       });
     },
   );

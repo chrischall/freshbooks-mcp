@@ -209,6 +209,16 @@ describe('auth tools bind the round-trip', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it('tells the person to pass the WHOLE redirect URL, matching the refusals', async () => {
+    const h = await createTestHarness((server) => registerAuthTools(server));
+    try {
+      const issued = parseToolResult(await h.callTool('freshbooks_auth_url', {})) as { next: string };
+      expect(issued.next).toMatch(/whole URL/);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('refuses a foreign redirect URL without spending a code at FreshBooks', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('must not contact FreshBooks');
