@@ -107,7 +107,8 @@ export function registerProjectTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, fields, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, fields, ...rest } = args;
       const payload = {
         ...Object.fromEntries(
           Object.entries(rest).filter(([, v]) => v !== undefined),
@@ -122,6 +123,7 @@ export function registerProjectTools(
         path: R.projects.path,
         body: { project: payload },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       return minifiedResult(
@@ -180,7 +182,8 @@ export function registerProjectTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, ...rest } = args;
       const payload = Object.fromEntries(
         Object.entries(rest).filter(([, v]) => v !== undefined),
       );
@@ -192,6 +195,7 @@ export function registerProjectTools(
         path: R.time_entries.path,
         body: { time_entry: payload },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       return minifiedResult(

@@ -110,7 +110,8 @@ export function registerInvoicingTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, fields, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, fields, ...rest } = args;
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_create_client",
@@ -120,6 +121,7 @@ export function registerInvoicingTools(
         path: RESOURCES.clients.path,
         body: { client: payload },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       return minifiedResult(
@@ -167,7 +169,8 @@ export function registerInvoicingTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, fields, allow_non_client_recipients, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, fields, allow_non_client_recipients, ...rest } = args;
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_create_invoice",
@@ -178,6 +181,7 @@ export function registerInvoicingTools(
         body: { invoice: payload },
         options: { allow_non_client_recipients: allow_non_client_recipients === true },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       if (payload.email_recipients !== undefined && allow_non_client_recipients !== true) {
@@ -219,7 +223,8 @@ export function registerInvoicingTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ id, fields, allow_non_client_recipients, confirmToken }, ctx) => {
+    async (args, ctx) => {
+      const { id, fields, allow_non_client_recipients, confirmToken } = args;
       assertNonEmptyUpdate(fields, `invoice ${id}`, 'Pass at least one field in `fields`, e.g. {"notes": "..."}.');
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_update_invoice",
@@ -237,6 +242,7 @@ export function registerInvoicingTools(
         },
         options: { allow_non_client_recipients: allow_non_client_recipients === true },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       if (fields.email_recipients !== undefined && allow_non_client_recipients !== true) {
@@ -287,7 +293,8 @@ export function registerInvoicingTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, ...rest } = args;
       const payload = stripUndefined(rest);
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_record_payment",
@@ -298,6 +305,7 @@ export function registerInvoicingTools(
         body: { payment: payload },
         target: payload.invoiceid as number,
         confirmToken,
+        args,
       });
       if (gate) return gate;
       return minifiedResult(

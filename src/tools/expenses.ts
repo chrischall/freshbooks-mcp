@@ -120,7 +120,8 @@ export function registerExpenseTools(
         confirmToken: confirmTokenParam,
       }),
     },
-    async ({ confirmToken, fields, ...rest }, ctx) => {
+    async (args, ctx) => {
+      const { confirmToken, fields, ...rest } = args;
       const payload = {
         ...Object.fromEntries(
           Object.entries(rest).filter(([, v]) => v !== undefined),
@@ -135,6 +136,7 @@ export function registerExpenseTools(
         path: R.expenses.path,
         body: { expense: payload },
         confirmToken,
+        args,
       });
       if (gate) return gate;
       return minifiedResult(
