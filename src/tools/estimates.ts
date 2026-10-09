@@ -4,6 +4,7 @@ import { McpToolError, minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { WrongIdentifierError } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
+import { assertNonEmptyUpdate } from "./_payload.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
 import {
@@ -232,16 +233,11 @@ export function registerEstimateTools(
         );
       }
       const payload = { ...stripUndefined(rest), ...(fields ?? {}) };
-      if (Object.keys(payload).length === 0) {
-        // An empty PUT is a write that reports success while changing nothing — exactly
-        // the "assume success from a 200" failure these tools are meant to rule out.
-        throw new McpToolError(
-          `No fields supplied, so there is nothing to update on estimate ${id}.`,
-          {
-            hint: "Pass at least one field (notes, terms, lines, presentation, …) or a raw `fields` object.",
-          },
-        );
-      }
+      assertNonEmptyUpdate(
+        payload,
+        `estimate ${id}`,
+        "Pass at least one field (notes, terms, lines, presentation, …) or a raw `fields` object.",
+      );
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_update_estimate",
         action: "estimate.update",

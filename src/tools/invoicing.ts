@@ -4,6 +4,7 @@ import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
+import { assertNonEmptyUpdate } from "./_payload.js";
 import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
 
 import { ACCOUNTING_RESOURCES } from "../resources.js";
@@ -217,6 +218,7 @@ export function registerInvoicingTools(
       }),
     },
     async ({ id, fields, allow_non_client_recipients, confirmToken }, ctx) => {
+      assertNonEmptyUpdate(fields, `invoice ${id}`, 'Pass at least one field in `fields`, e.g. {"notes": "..."}.');
       const gate = await confirmWrite(ctx, {
         tool: "freshbooks_update_invoice",
         action: "invoice.update",

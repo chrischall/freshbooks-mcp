@@ -295,3 +295,17 @@ describe('invoice recipient guard', () => {
     });
   });
 });
+
+// An empty PUT is a write that reports success while changing nothing;
+// update_estimate already refuses one. (chrischall/fleet-audit#460)
+describe('update_invoice empty payload', () => {
+  it('refuses an empty fields object and sends nothing', async () => {
+    const { requests, client } = trackedClient();
+    const h = await createTestHarness((s) => registerInvoicingTools(s, client));
+    const res = await callConfirmed(h, 'freshbooks_update_invoice', { id: 5, fields: {} });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toMatch(/nothing to update/i);
+    expect(requests).toHaveLength(0);
+    await h.close();
+  });
+});
