@@ -71,9 +71,15 @@ export function registerRecordTools(
       inputSchema: z.object({
         resource: resourceArg,
         id: z
-          .union([z.number().int().positive(), z.string().min(1)])
+          // A string id must still be all digits: encodeURIComponent leaves '.'
+          // and '..' alone and URL normalisation resolves them, so a free-form
+          // string could address a different endpoint than `resource` allows.
+          .union([
+            z.number().int().positive(),
+            z.string().regex(/^[1-9]\d*$/, "id must be a positive integer"),
+          ])
           .describe(
-            "The record id — numeric for all currently mapped resources",
+            "The record id — numeric for all currently mapped resources (digits only if passed as text)",
           ),
       }),
     },
