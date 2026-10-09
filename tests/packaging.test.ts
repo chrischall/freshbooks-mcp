@@ -22,6 +22,14 @@ describe('packaging', () => {
     expect(pkg.publishConfig?.access).toBe('public');
   });
 
+  it('carries no unused dotenv runtime dependency', () => {
+    // Nothing loads a .env file (loadDotenvSafely is never called), so dotenv was dead
+    // weight in every install and its --external flag kept a dangling import in the
+    // .mcpb bundle. (chrischall/fleet-audit#462)
+    expect(pkg.dependencies?.dotenv).toBeUndefined();
+    expect(pkg.scripts.bundle).not.toContain('--external:dotenv');
+  });
+
   it('ships skills/ on npm', () => {
     expect(pkg.files).toContain('skills/');
   });
