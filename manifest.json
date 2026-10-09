@@ -41,6 +41,144 @@
       }
     }
   },
+  "tools": [
+    {
+      "name": "freshbooks_auth_url",
+      "description": "Get the FreshBooks consent URL to authorise this connection"
+    },
+    {
+      "name": "freshbooks_auth_exchange",
+      "description": "Complete FreshBooks authorization from the redirect URL or code"
+    },
+    {
+      "name": "freshbooks_get_identity",
+      "description": "Resolve the authenticated user and their accountId, businessId and businessUuid"
+    },
+    {
+      "name": "freshbooks_healthcheck",
+      "description": "Check the FreshBooks credential with one authenticated request"
+    },
+    {
+      "name": "freshbooks_list_invoices",
+      "description": "List invoices"
+    },
+    {
+      "name": "freshbooks_get_invoice",
+      "description": "Get a single invoice by id"
+    },
+    {
+      "name": "freshbooks_list_clients",
+      "description": "List clients"
+    },
+    {
+      "name": "freshbooks_get_client",
+      "description": "Get a single client by id"
+    },
+    {
+      "name": "freshbooks_list_estimates",
+      "description": "List estimates"
+    },
+    {
+      "name": "freshbooks_get_estimate",
+      "description": "Get a single estimate by id"
+    },
+    {
+      "name": "freshbooks_list_payments",
+      "description": "List payments"
+    },
+    {
+      "name": "freshbooks_get_payment",
+      "description": "Get a single payment by id"
+    },
+    {
+      "name": "freshbooks_list_items",
+      "description": "List items"
+    },
+    {
+      "name": "freshbooks_get_item",
+      "description": "Get a single item by id"
+    },
+    {
+      "name": "freshbooks_create_client",
+      "description": "Create a client (customer)"
+    },
+    {
+      "name": "freshbooks_create_invoice",
+      "description": "Create a draft invoice for a client"
+    },
+    {
+      "name": "freshbooks_update_invoice",
+      "description": "Update an existing invoice"
+    },
+    {
+      "name": "freshbooks_record_payment",
+      "description": "Record a payment against an invoice"
+    },
+    {
+      "name": "freshbooks_accept_estimate",
+      "description": "Accept an estimate (not reversible)"
+    },
+    {
+      "name": "freshbooks_decline_estimate",
+      "description": "Explain why estimates cannot be declined through the API, and the alternatives"
+    },
+    {
+      "name": "freshbooks_update_estimate",
+      "description": "Update an existing estimate"
+    },
+    {
+      "name": "freshbooks_send_estimate",
+      "description": "Email an estimate to the client"
+    },
+    {
+      "name": "freshbooks_list_expenses",
+      "description": "List expenses"
+    },
+    {
+      "name": "freshbooks_get_expense",
+      "description": "Get a single expense by id"
+    },
+    {
+      "name": "freshbooks_list_expense_categories",
+      "description": "List expense categories"
+    },
+    {
+      "name": "freshbooks_create_expense",
+      "description": "Record an expense"
+    },
+    {
+      "name": "freshbooks_list_projects",
+      "description": "List projects"
+    },
+    {
+      "name": "freshbooks_get_project",
+      "description": "Get a single project by id"
+    },
+    {
+      "name": "freshbooks_create_project",
+      "description": "Create a project"
+    },
+    {
+      "name": "freshbooks_list_time_entries",
+      "description": "List tracked time entries"
+    },
+    {
+      "name": "freshbooks_create_time_entry",
+      "description": "Log a time entry"
+    },
+    {
+      "name": "freshbooks_list_services",
+      "description": "List services (billable work types)"
+    },
+    {
+      "name": "freshbooks_list_records",
+      "description": "List any accounting resource by name (taxes, credit notes, bills, …)"
+    },
+    {
+      "name": "freshbooks_get_record",
+      "description": "Get a single record from any accounting resource by name and id"
+    }
+  ],
   "user_config": {
     "freshbooks_client_id": {
       "type": "string",
