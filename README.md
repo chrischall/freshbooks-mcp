@@ -22,8 +22,10 @@ one-time browser authorization is required.
 3. Complete the one-time authorization:
    - **From the server itself** (no script): set `FRESHBOOKS_CLIENT_ID` and
      `FRESHBOOKS_CLIENT_SECRET`, start it, then call `freshbooks_auth_url`, open
-     the URL it returns, approve, and pass the URL you land on to
-     `freshbooks_auth_exchange`. Local sessions save the tokens directly to
+     the URL it returns, approve, and pass the **whole** URL you land on to
+     `freshbooks_auth_exchange`. Its `state` must match the consent URL this
+     session issued (valid 15 minutes, single-use), so a redirect URL from anyone
+     else's authorisation is refused before its code is spent. Local sessions save the tokens directly to
      `FRESHBOOKS_TOKEN_STORE` and return only a success message. Restart the
      local MCP server after that message. No token needs to be copied into chat
      or configuration. Keep the same app credentials and store path after restart.

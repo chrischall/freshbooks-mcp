@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -218,12 +219,112 @@ function saveLocalAuthorization(config: OAuthConfig, tokens: TokenResponse, file
  * the way; a leaked client secret there would be as bad as leaking the token
  * it protects.
  */
-export function authorizeUrl(config: OAuthConfig): string {
+export function authorizeUrl(config: OAuthConfig, state?: string): string {
   const u = new URL(AUTHORIZE_URL);
   u.searchParams.set('client_id', config.clientId);
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('redirect_uri', config.redirectUri);
+  if (state !== undefined) u.searchParams.set('state', state);
   return u.toString();
+}
+
+/**
+ * OAuth `state` values this process has handed out, each with its expiry.
+ *
+ * Binds a consent round-trip to the session that started it. Without one, a
+ * socially engineered paste of SOMEONE ELSE's redirect URL would connect this
+ * server to their FreshBooks account, and the user's later writes would put
+ * customer data into it (fleet-audit#465). Held in memory on purpose: a state
+ * outliving the process that issued it is exactly the unbound case.
+ */
+const AUTH_STATE_TTL_MS = 15 * 60_000;
+const pendingAuthStates = new Map<string, number>();
+
+function pruneAuthStates(now: number): void {
+  for (const [state, expiresAt] of pendingAuthStates) {
+    if (expiresAt <= now) pendingAuthStates.delete(state);
+  }
+}
+
+/** Mint and remember a fresh `state` for one consent URL. */
+export function issueAuthState(now: number = Date.now()): string {
+  pruneAuthStates(now);
+  const state = randomBytes(24).toString('base64url');
+  pendingAuthStates.set(state, now + AUTH_STATE_TTL_MS);
+  return state;
+}
+
+/** Test seam: forget every issued state. */
+export function resetAuthStatesForTesting(): void {
+  pendingAuthStates.clear();
+}
+
+function sameRedirect(url: URL, redirectUri: string): boolean {
+  let expected: URL;
+  try {
+    expected = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  return url.origin === expected.origin && url.pathname === expected.pathname;
+}
+
+/**
+ * Check what was pasted belongs to a consent round-trip THIS session started,
+ * BEFORE the code is spent at FreshBooks.
+ *
+ * - A pasted URL must be this connection's redirect URI (origin and path).
+ * - Once `freshbooks_auth_url` has issued a state, only the redirect URL
+ *   carrying that state is accepted — a bare code carries none, so it cannot be
+ *   bound and is refused. A matched state is consumed (single-use).
+ * - A URL carrying a state this process never issued (or that expired) is
+ *   refused: it is a foreign or stale round-trip either way.
+ * - With nothing issued here and no state pasted, it is accepted as before:
+ *   the code was minted outside this session's consent URL.
+ */
+export function verifyAuthorizationResponse(
+  input: string,
+  config: OAuthConfig,
+  now: number = Date.now(),
+): void {
+  pruneAuthStates(now);
+  const trimmed = (input ?? '').trim();
+  let url: URL | null = null;
+  if (trimmed.includes('://')) {
+    try {
+      url = new URL(trimmed);
+    } catch {
+      url = null;
+    }
+  }
+  const restart = 'Run freshbooks_auth_url again, approve, and paste the whole redirect URL you land on.';
+  if (url !== null && !sameRedirect(url, config.redirectUri)) {
+    throw new McpToolError(
+      `That URL is not this connection's redirect URI (${config.redirectUri}), so it is not a consent response for this session.`,
+      { hint: restart },
+    );
+  }
+  const state = url?.searchParams.get('state') ?? null;
+  if (pendingAuthStates.size === 0) {
+    if (state === null) return;
+    throw new McpToolError(
+      'That redirect URL carries an OAuth state this session did not issue (or it expired).',
+      { hint: restart },
+    );
+  }
+  if (url === null) {
+    throw new McpToolError(
+      'Paste the whole redirect URL, not just the code: its state parameter is what proves the approval came from the consent URL this session issued.',
+      { hint: restart },
+    );
+  }
+  if (state === null || !pendingAuthStates.has(state)) {
+    throw new McpToolError(
+      'That redirect URL\'s OAuth state does not match the consent URL this session issued, so it may be someone else\'s authorisation. Nothing was exchanged.',
+      { hint: restart },
+    );
+  }
+  pendingAuthStates.delete(state);
 }
 
 /**

@@ -51,7 +51,7 @@
     },
     {
       "name": "freshbooks_auth_exchange",
-      "description": "Complete FreshBooks authorization from the redirect URL or code"
+      "description": "Complete FreshBooks authorization from the redirect URL"
     },
     {
       "name": "freshbooks_get_identity",

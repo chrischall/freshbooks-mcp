@@ -6,7 +6,9 @@ import {
   authorizeLocally,
   exchangeAuthorizationCode,
   isHosted,
+  issueAuthState,
   readBootstrapConfig,
+  verifyAuthorizationResponse,
 } from "../auth.js";
 
 /**
@@ -29,7 +31,7 @@ export function registerAuthTools(server: McpServer): void {
     "freshbooks_auth_url",
     {
       description:
-        "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL (or just its ?code= value) to freshbooks_auth_exchange. Read-only; contacts nothing.",
+        "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL to freshbooks_auth_exchange (its state parameter binds the approval to this session). Read-only; contacts nothing.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -39,7 +41,7 @@ export function registerAuthTools(server: McpServer): void {
       // No network call: this is string assembly, and saying so stops a caller
       // treating a failure here as FreshBooks being down.
       return minifiedResult({
-        authorize_url: authorizeUrl(result.config),
+        authorize_url: authorizeUrl(result.config, issueAuthState()),
         redirect_uri: result.config.redirectUri,
         next: "Open authorize_url, approve, then pass the URL you land on to freshbooks_auth_exchange.",
       });
@@ -50,12 +52,12 @@ export function registerAuthTools(server: McpServer): void {
     "freshbooks_auth_exchange",
     {
       description:
-        "Complete FreshBooks authorization. Local sessions save the credentials privately and return only status; hosted sessions return the refresh token to the host's credential-capture flow. Accepts the redirect URL or bare code. The code is SINGLE-USE — if this fails, authorise again rather than retrying it.",
+        "Complete FreshBooks authorization. Local sessions save the credentials privately and return only status; hosted sessions return the refresh token to the host's credential-capture flow. Pass the whole redirect URL: its state must match the consent URL freshbooks_auth_url issued. The code is SINGLE-USE — if this fails, authorise again rather than retrying it.",
       inputSchema: z.object({
         code: z
           .string()
           .describe(
-            "The ?code= value, or the entire redirect URL you were sent to after approving.",
+            "The entire redirect URL you were sent to after approving (a bare ?code= value is only accepted if no consent URL was issued in this session).",
           ),
       }),
       // Destructive: it spends a single-use authorization code and replaces the saved
@@ -65,6 +67,9 @@ export function registerAuthTools(server: McpServer): void {
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();
       if ("error" in result) return minifiedResult({ error: result.error });
+      // Before the code is spent: refuse a paste that is not the redirect from
+      // the consent URL this session issued (fleet-audit#465).
+      verifyAuthorizationResponse(code, result.config);
       if (!isHosted()) {
         await authorizeLocally(result.config, code);
         return minifiedResult({
