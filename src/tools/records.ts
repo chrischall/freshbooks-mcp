@@ -34,7 +34,7 @@ export function registerRecordTools(
         "bill vendors, bill payments, other income, expense categories) alongside the ones " +
         "with dedicated tools. Returns items plus page/pages/total. Some resources are gated " +
         "by plan or account role and will report that rather than returning rows.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         resource: resourceArg,
         page: z.number().int().positive().optional(),
@@ -67,7 +67,7 @@ export function registerRecordTools(
         "Get a single record from any FreshBooks accounting resource by name and id. Ids are " +
         "numeric on every resource mapped here; the schema also accepts a string so an id " +
         "carried around as text still works.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         resource: resourceArg,
         id: z

@@ -26,7 +26,7 @@ export function registerExpenseTools(
         'FreshBooks filters (e.g. {"search[categoryid]": 5}). If the response reports a total ' +
         "with no rows, the count includes records this identity cannot read — that is reported " +
         "in the `note` field rather than looking like an empty account.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         page: z.number().int().positive().optional(),
         per_page: z.number().int().positive().max(100).optional(),
@@ -49,7 +49,7 @@ export function registerExpenseTools(
     "freshbooks_get_expense",
     {
       description: "Get a single expense by its numeric id.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Expense id"),
       }),
@@ -65,7 +65,7 @@ export function registerExpenseTools(
     {
       description:
         "List expense categories, which supply the categoryid used when creating an expense.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         page: z.number().int().positive().optional(),
         per_page: z.number().int().positive().max(100).optional(),
@@ -89,7 +89,7 @@ export function registerExpenseTools(
     {
       description:
         "Record an expense. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         amount: money,
         date: z.string().optional().describe("Expense date, YYYY-MM-DD"),

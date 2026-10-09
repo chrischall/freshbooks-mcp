@@ -31,7 +31,7 @@ export function registerAuthTools(server: McpServer): void {
       description:
         "Get the FreshBooks consent URL to authorise this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL (or just its ?code= value) to freshbooks_auth_exchange. Read-only; contacts nothing.",
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
       const result = readBootstrapConfig();
@@ -58,7 +58,9 @@ export function registerAuthTools(server: McpServer): void {
             "The ?code= value, or the entire redirect URL you were sent to after approving.",
           ),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      // Destructive: it spends a single-use authorization code and replaces the saved
+      // credentials, and nothing in this tool set restores either.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();

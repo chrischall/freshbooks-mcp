@@ -29,7 +29,7 @@ export function registerProjectTools(
       description:
         "List projects for the business. Uses businessId (not accountId) and works even when " +
         "the business has no accounting account.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>
@@ -47,7 +47,7 @@ export function registerProjectTools(
     "freshbooks_get_project",
     {
       description: "Get a single project by its numeric id.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Project id"),
       }),
@@ -73,7 +73,7 @@ export function registerProjectTools(
     {
       description:
         "Create a project. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         title: z.string().describe("Project title"),
         client_id: z
@@ -142,7 +142,7 @@ export function registerProjectTools(
       description:
         "List tracked time entries for the business. The response envelope also carries " +
         "total_logged and total_unbilled alongside the rows.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>
@@ -164,7 +164,7 @@ export function registerProjectTools(
     {
       description:
         "Log a time entry. Duration is in SECONDS. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         duration: z
           .number()
@@ -213,7 +213,7 @@ export function registerProjectTools(
     {
       description:
         "List services (the billable work types available to projects and time entries).",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },
     async ({ page: p, per_page }) =>

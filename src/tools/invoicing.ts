@@ -51,7 +51,7 @@ export function registerInvoicingTools(
         description:
           `List ${name} for the authenticated FreshBooks account. Supports pagination and raw ` +
           `FreshBooks filter params. Returns items plus page/pages/total.`,
-        annotations: { readOnlyHint: true },
+        annotations: { readOnlyHint: true, openWorldHint: true },
         inputSchema: pageArgs,
       },
       async ({ page, per_page, search }) =>
@@ -68,7 +68,7 @@ export function registerInvoicingTools(
       `freshbooks_get_${name.replace(/s$/, "")}`,
       {
         description: `Get a single ${name.replace(/s$/, "")} by its numeric FreshBooks id.`,
-        annotations: { readOnlyHint: true },
+        annotations: { readOnlyHint: true, openWorldHint: true },
         inputSchema: z.object({
           id: z
             .number()
@@ -83,12 +83,15 @@ export function registerInvoicingTools(
   }
 
   // ---- Writes (confirmation-gated) -------------------------------------------
+  // destructiveHint is true on every create in this server: no tool here deletes,
+  // voids or archives what it creates (invoice soft-delete via vis_state is still an
+  // open question in docs/FRESHBOOKS-API.md), so nothing restores the prior state.
   server.registerTool(
     "freshbooks_create_client",
     {
       description:
         "Create a client (customer) in FreshBooks. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         email: z.string().optional().describe("Client's email address"),
         fname: z.string().optional().describe("First name"),
@@ -139,7 +142,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create an invoice for a client. Created invoices start as drafts. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         customerid: z
           .number()
@@ -269,7 +272,7 @@ export function registerInvoicingTools(
     {
       description:
         "Record a payment against an invoice. " + CONFIRM_DESCRIPTION,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         invoiceid: z
           .number()
