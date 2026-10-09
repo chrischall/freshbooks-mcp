@@ -227,24 +227,29 @@ export class FreshbooksClient {
     path: string,
     init: { method?: string; body?: unknown } = {},
   ): Promise<unknown> {
-    const token = await this.tokens().getAccessToken();
     const method = init.method ?? 'GET';
     const timeoutMs = requestTimeoutMs();
     const deadline = AbortSignal.timeout(timeoutMs);
     let res: Response;
     let raw: string;
     try {
-      res = await this.fetchImpl(`${BASE_URL}${path}`, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Api-Version': 'alpha',
-          Accept: 'application/json',
-          ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        },
-        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        signal: withAmbientCancellation(deadline),
-      });
+      // withAuth replays once after a forced refresh on a 401: FreshBooks can
+      // invalidate an access token before its expiresAt (revocation,
+      // reauthorisation, clock skew) while the refresh token is still good.
+      // A 401 means the request was not processed, so a replayed write is safe.
+      res = await this.tokens().withAuth((token) =>
+        this.fetchImpl(`${BASE_URL}${path}`, {
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Api-Version': 'alpha',
+            Accept: 'application/json',
+            ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          },
+          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+          signal: withAmbientCancellation(deadline),
+        }),
+      );
       raw = await res.text();
     } catch (err) {
       // Only OUR deadline becomes a timeout message; a caller cancellation or a
