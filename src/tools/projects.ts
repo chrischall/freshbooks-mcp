@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { minifiedResult } from "@chrischall/mcp-utils";
+import { McpToolError, minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { BUSINESS_RESOURCES } from "../resources.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
@@ -52,15 +52,20 @@ export function registerProjectTools(
         id: z.number().int().positive().describe("Project id"),
       }),
     },
-    async ({ id }) =>
-      minifiedResult(
-        await client.businessGet(
-          R.projects.family,
-          R.projects.path,
-          id,
-          R.projects.single,
-        ),
-      ),
+    async ({ id }) => {
+      const project = await client.businessGet(
+        R.projects.family,
+        R.projects.path,
+        id,
+        R.projects.single,
+      );
+      if (project === null || project === undefined) {
+        throw new McpToolError(`FreshBooks returned no project ${id}.`, {
+          hint: "Confirm the id with freshbooks_list_projects.",
+        });
+      }
+      return minifiedResult(project);
+    },
   );
 
   server.registerTool(

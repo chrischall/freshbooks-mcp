@@ -194,6 +194,55 @@ describe('generic record accessor', () => {
 });
 
 describe('business-scoped tools', () => {
+  // get_project on a record FreshBooks did not return must say so, not hand the
+  // model an empty object or a bare envelope. (chrischall/fleet-audit#847)
+  it('get_project on a missing record raises a not-found error', async () => {
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/auth/oauth/token')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'at',
+            refresh_token: 'rt2',
+            created_at: Math.floor(Date.now() / 1000),
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        );
+      }
+      if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
+      return new Response(JSON.stringify({ meta: {} }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new FreshbooksClient({ fetchImpl, storePath: '/tmp/fb-tools-missing-project.json' });
+    const h = await createTestHarness((s) => registerProjectTools(s, client));
+    const res = await h.callTool('freshbooks_get_project', { id: 4242 });
+    expect(res.isError).toBe(true);
+    const text = (res.content as Array<{ text: string }>).map((c) => c.text).join('\n');
+    expect(text).toMatch(/no project 4242/i);
+    expect(text).toMatch(/freshbooks_list_projects/);
+    await h.close();
+  });
+
+  it('get_project returns the record when FreshBooks has it', async () => {
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/auth/oauth/token')) {
+        return new Response(
+          JSON.stringify({ access_token: 'at', refresh_token: 'rt2', created_at: Math.floor(Date.now() / 1000), expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
+      return new Response(JSON.stringify({ project: { id: 4242, title: 'Patio' } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new FreshbooksClient({ fetchImpl, storePath: '/tmp/fb-tools-found-project.json' });
+    const h = await createTestHarness((s) => registerProjectTools(s, client));
+    const res = await h.callTool('freshbooks_get_project', { id: 4242 });
+    expect(res.isError).toBeFalsy();
+    expect(parseToolResult(res)).toMatchObject({ id: 4242, title: 'Patio' });
+    await h.close();
+  });
+
   it('routes projects and time entries to businessId, not accountId', async () => {
     const { requests, client } = trackedClient();
     const h = await createTestHarness((s) => registerProjectTools(s, client));
