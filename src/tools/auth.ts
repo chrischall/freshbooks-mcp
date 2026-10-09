@@ -58,7 +58,7 @@ export function registerAuthTools(server: McpServer): void {
             "The ?code= value, or the entire redirect URL you were sent to after approving.",
           ),
       }),
-      annotations: { readOnlyHint: false, idempotentHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ code }: { code: string }) => {
       const result = readBootstrapConfig();

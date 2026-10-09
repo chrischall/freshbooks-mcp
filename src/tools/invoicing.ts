@@ -88,6 +88,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create a client (customer) in FreshBooks. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         email: z.string().optional().describe("Client's email address"),
         fname: z.string().optional().describe("First name"),
@@ -136,6 +137,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create an invoice for a client. Created invoices start as drafts. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         customerid: z
           .number()
@@ -261,6 +263,7 @@ export function registerInvoicingTools(
     {
       description:
         "Record a payment against an invoice. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         invoiceid: z
           .number()

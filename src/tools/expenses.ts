@@ -89,6 +89,7 @@ export function registerExpenseTools(
     {
       description:
         "Record an expense. " + CONFIRM_DESCRIPTION,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         amount: money,
         date: z.string().optional().describe("Expense date, YYYY-MM-DD"),

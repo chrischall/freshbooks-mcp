@@ -59,6 +59,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Idempotent: an estimate already accepted or invoiced is returned unchanged " +
         "with changed: false and no write is sent. Returns the re-fetched estimate.",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z
           .number()
@@ -131,6 +132,7 @@ export function registerEstimateTools(
       // means "an executable write, behind a gate", so offering it here would invite a
       // retry through the confirmation flow in the belief that decline exists and is
       // merely gated.
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
       }),
@@ -166,6 +168,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Supplying lines REPLACES the whole line set — include each existing " +
         "line's lineid to keep it. Returns the re-fetched estimate.",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
         notes: z.string().optional().describe("Notes shown on the estimate"),
