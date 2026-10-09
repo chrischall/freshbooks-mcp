@@ -2,7 +2,7 @@
 // release-please has already cut a GitHub Release, when `npm publish --provenance`
 // rejects the whole publish and the registry/plugin steps silently skip.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -82,6 +82,16 @@ describe('packaging', () => {
     // warning section in the changelog — and would have kept it there for
     // good. Removed, not inverted: the repos that behave correctly omit it.
     expect(p['bump-minor-pre-major']).toBeUndefined();
+  });
+
+  it('declares the plugin MCP config under the mcpServers key Claude Code reads', () => {
+    // Claude Code ignores an `mcp` key ("Unknown field 'mcp'"); it only worked
+    // here because ./.mcp.json is the default. Copied with a non-default path,
+    // the same mistake broke plugin installs elsewhere.
+    const plugin = read('.claude-plugin/plugin.json');
+    expect(plugin.mcp).toBeUndefined();
+    expect(plugin.mcpServers).toBe('./.mcp.json');
+    expect(existsSync(join(ROOT, plugin.mcpServers))).toBe(true);
   });
 
   it('keeps all manifests at one version', () => {
