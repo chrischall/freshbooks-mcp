@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "freshbooks": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@chrischall/freshbooks-mcp"],
       "env": {
         "FRESHBOOKS_CLIENT_ID": "${FRESHBOOKS_CLIENT_ID}",
         "FRESHBOOKS_CLIENT_SECRET": "${FRESHBOOKS_CLIENT_SECRET}",
