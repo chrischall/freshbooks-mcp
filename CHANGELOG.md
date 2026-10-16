@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.1...v1.2.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **deps:** bump the production-dependencies group with 3 updates ([#124](https://github.com/chrischall/freshbooks-mcp/issues/124)) ([a46228a](https://github.com/chrischall/freshbooks-mcp/commit/a46228a06312b3877498bc371baaa7f655014c24))
+* **plugin:** launch the published package so marketplace installs start ([#127](https://github.com/chrischall/freshbooks-mcp/issues/127)) ([42fe3e0](https://github.com/chrischall/freshbooks-mcp/commit/42fe3e0bac85311628dd1128123348a1c929c063))
+
 ## [1.2.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.0...v1.2.1) (2026-10-09)
 
 
