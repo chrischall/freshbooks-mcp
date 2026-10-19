@@ -4,6 +4,13 @@ slug: freshbooks
 summary: >-
   FreshBooks invoicing and accounts receivable for Claude — manage invoices,
   clients, estimates, and payments via natural language
+examples:
+  - prompt: Which of my FreshBooks invoices are still unpaid, and how much is outstanding in total?
+    note: Read-only invoice listing; nothing is sent or changed.
+  - prompt: How much tracked time in FreshBooks hasn't been billed yet?
+    note: Reads time entries and their total_unbilled figure.
+  - prompt: Break down this year's FreshBooks expenses by category.
+    note: Lists expenses alongside the expense categories.
 env:
   - name: FRESHBOOKS_CLIENT_ID
     required: true
