@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.3](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.2...v1.2.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** bump the production-dependencies group with 2 updates ([#133](https://github.com/chrischall/freshbooks-mcp/issues/133)) ([4a59878](https://github.com/chrischall/freshbooks-mcp/commit/4a598787fac89a561a497c58c5775fbab53bb63a))
+
+
+### Documentation
+
+* **mint:** add sample prompts for the public catalog ([#130](https://github.com/chrischall/freshbooks-mcp/issues/130)) ([7f7d170](https://github.com/chrischall/freshbooks-mcp/commit/7f7d170ed0a26cfbd9fbbaa7e8ae9838f1b571f8))
+
 ## [1.2.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.1...v1.2.2) (2026-10-16)
 
 
