@@ -4,6 +4,7 @@ import { minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { ACCOUNTING_RESOURCES } from "../resources.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
+import { moneyMeta } from "./_hints.js";
 
 const money = z
   .object({
@@ -26,6 +27,7 @@ export function registerExpenseTools(
         'FreshBooks filters (e.g. {"search[categoryid]": 5}). If the response reports a total ' +
         "with no rows, the count includes records this identity cannot read — that is reported " +
         "in the `note` field rather than looking like an empty account.",
+      _meta: moneyMeta("lookup", { aliases: ["expenses", "spending", "receipts"] }),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         page: z.number().int().positive().optional(),
@@ -49,6 +51,7 @@ export function registerExpenseTools(
     "freshbooks_get_expense",
     {
       description: "Get a single expense by its numeric id.",
+      _meta: moneyMeta("lookup"),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Expense id"),
@@ -65,6 +68,7 @@ export function registerExpenseTools(
     {
       description:
         "List expense categories, which supply the categoryid used when creating an expense.",
+      _meta: moneyMeta("lookup"),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         page: z.number().int().positive().optional(),
@@ -89,6 +93,7 @@ export function registerExpenseTools(
     {
       description:
         "Record an expense. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change", { aliases: ["log expense", "add receipt"] }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         amount: money,
