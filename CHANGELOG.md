@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.3.0...v1.3.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **brief:** align the brief view with the fleet contract ([#139](https://github.com/chrischall/freshbooks-mcp/issues/139)) ([28adb3b](https://github.com/chrischall/freshbooks-mcp/commit/28adb3b288d5bb9870bced720504c15260251a63))
+
 ## [1.3.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.2...v1.3.0) (2026-11-04)
 
 
