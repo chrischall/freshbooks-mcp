@@ -13,6 +13,8 @@ import { registerHealthcheckTools } from '../src/tools/healthcheck.js';
 import { registerInvoicingTools } from '../src/tools/invoicing.js';
 import { registerProjectTools } from '../src/tools/projects.js';
 import { registerRecordTools } from '../src/tools/records.js';
+import { invoiceBriefLine } from '../src/tools/_brief.js';
+import { UNTRUSTED_CONTENT_RULE } from '@chrischall/mcp-utils';
 
 type Mint = {
   domain?: string;
@@ -101,6 +103,9 @@ const INVOICES = [
   { id: 14 },
 ];
 
+/** What the stubbed invoice list answers; a test may swap it for its own page. */
+let listBody: Record<string, unknown> = { invoices: INVOICES, page: 1, pages: 1, total: INVOICES.length };
+
 const IDENTITY = {
   response: {
     identity_id: 1,
@@ -122,7 +127,7 @@ function stubClient(): { client: FreshbooksClient; urls: string[] } {
     urls.push(u);
     if (u.includes('/users/me')) return new Response(JSON.stringify(IDENTITY), { status: 200 });
     return new Response(
-      JSON.stringify({ response: { result: { invoices: INVOICES, page: 1, pages: 1, total: INVOICES.length } } }),
+      JSON.stringify({ response: { result: listBody } }),
       { status: 200 },
     );
   }) as unknown as typeof fetch;
@@ -152,6 +157,7 @@ async function served(): Promise<Listed[]> {
 }
 
 beforeEach(() => {
+  listBody = { invoices: INVOICES, page: 1, pages: 1, total: INVOICES.length };
   process.env.FRESHBOOKS_CLIENT_ID = 'cid';
   process.env.FRESHBOOKS_CLIENT_SECRET = 'csecret';
   process.env.FRESHBOOKS_REFRESH_TOKEN = 'rt';
@@ -233,14 +239,54 @@ describe('_meta.mint on tools/list', () => {
   });
 });
 
+type Envelope = { untrusted_content: boolean; note: string; data: string[] };
+
+/** The brief answer: one minified untrusted-data envelope whose `data` is the lines. */
+async function brief(args: Record<string, unknown> = {}): Promise<Envelope> {
+  const { h } = await harness();
+  const res = await h.callTool('freshbooks_list_invoices', { view: 'brief', ...args });
+  await h.close();
+  expect(res.isError).toBeFalsy();
+  const content = res.content as Array<{ type: string; text: string }>;
+  expect(content).toHaveLength(1);
+  expect(content[0].text).not.toMatch(/\n/); // minified
+  return JSON.parse(content[0].text) as Envelope;
+}
+
 describe('freshbooks_list_invoices view: brief', () => {
+  it('fences the lines in the untrusted-data envelope, note first, data: string[]', async () => {
+    const env = await brief();
+    expect(Object.keys(env)).toEqual(['untrusted_content', 'note', 'data']);
+    expect(env.untrusted_content).toBe(true);
+    expect(env.note).toMatch(/^Client names below are written in FreshBooks/);
+    expect(env.note).toContain(UNTRUSTED_CONTENT_RULE);
+    expect(Array.isArray(env.data)).toBe(true);
+  });
+
+  it('answers the single note line "-- none" for an empty list', async () => {
+    listBody = { invoices: [], page: 1, pages: 0, total: 0 };
+    expect((await brief()).data).toEqual(['-- none']);
+  });
+
+  it('says how much of the list a page shows: "-- N of M shown"', async () => {
+    listBody = { invoices: INVOICES.slice(0, 2), page: 1, pages: 2, total: 4 };
+    const { data } = await brief({ per_page: 2 });
+    expect(data).toHaveLength(3);
+    expect(data[2]).toBe('-- 2 of 4 shown');
+  });
+
+  it('says "-- more" when FreshBooks reports further pages but no total', async () => {
+    listBody = { invoices: INVOICES.slice(0, 2), page: 1, pages: 3 };
+    expect((await brief()).data.at(-1)).toBe('-- more');
+  });
+
+  it('keeps the rows FreshBooks will not show visible as a note, not an empty answer', async () => {
+    listBody = { invoices: [], page: 1, pages: 1, total: 3 };
+    expect((await brief()).data).toEqual(['-- none', '-- 0 of 3 shown']);
+  });
+
   it('answers one line per invoice, ≤ 120 chars, "title — <ISO date | no date> — <status>"', async () => {
-    const { h } = await harness();
-    const res = await h.callTool('freshbooks_list_invoices', { view: 'brief' });
-    await h.close();
-    expect(res.isError).toBeFalsy();
-    const text = (res.content as Array<{ type: string; text: string }>)[0].text;
-    const lines = text.split('\n');
+    const lines = (await brief()).data;
     expect(lines).toHaveLength(INVOICES.length);
     for (const line of lines) {
       expect(line.length, line).toBeLessThanOrEqual(120);
@@ -250,6 +296,23 @@ describe('freshbooks_list_invoices view: brief', () => {
     expect(lines[1]).toBe('Invoice 0000102, Sam Sample, 75.50 USD — no date — draft');
     expect(lines[2]).toMatch(/^Invoice 0000103, A client with a very long .*… — 2026-12-01 — unpaid$/);
     expect(lines[3]).toBe('Invoice 14 — no date — no status');
+  });
+
+  it('cuts the WHOLE line to ≤ 120 chars, title first, when the status alone would overflow', () => {
+    const line = invoiceBriefLine({
+      invoice_number: '9',
+      organization: 'Example Studio',
+      due_date: '2026-11-20',
+      v3_status: 'a status FreshBooks never sends but which is long enough to overflow the line on its own '.repeat(2),
+    });
+    expect(line.length).toBeLessThanOrEqual(120);
+    expect(line.startsWith('Invoice 9')).toBe(true);
+    expect(line).toContain(' — 2026-11-20 — a status');
+  });
+
+  it('keeps one item on one line when a client name carries a newline', () => {
+    const line = invoiceBriefLine({ invoice_number: '9', organization: 'Example\nStudio', v3_status: 'sent' });
+    expect(line).toBe('Invoice 9, Example Studio — no date — sent');
   });
 
   it('passes the page and filters through, the same request the full view sends', async () => {

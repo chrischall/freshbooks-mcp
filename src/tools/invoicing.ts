@@ -1,13 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { minifiedResult } from "@chrischall/mcp-utils";
+import { minifiedResult, untrustedEnvelope } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
 import { lineSchema } from "./_lines.js";
 import { assertNonEmptyUpdate } from "./_payload.js";
 import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
 import { moneyMeta } from "./_hints.js";
-import { invoiceBriefLine } from "./_brief.js";
+import { invoiceBriefLines, UNTRUSTED_BRIEF_NOTE } from "./_brief.js";
 
 import { ACCOUNTING_RESOURCES } from "../resources.js";
 
@@ -47,7 +47,9 @@ const invoiceListArgs = pageArgs.extend({
     .optional()
     .describe(
       '"full" (default) returns FreshBooks\' invoices plus page/pages/total; "brief" returns one line ' +
-        "per invoice: Invoice <number>, <client>, <amount> — <due date or \"no date\"> — <status>.",
+        "per invoice: Invoice <number>, <client>, <amount> — <due date or \"no date\"> — <status>, " +
+        'inside the untrusted-data envelope as data (client names are third-party text), with "-- " note ' +
+        'lines for an empty page ("-- none") or a partial one ("-- N of M shown", "-- more").',
     ),
 });
 
@@ -86,7 +88,7 @@ export function registerInvoicingTools(
         filters: search,
       });
       if (view === "brief") {
-        return { content: [{ type: "text" as const, text: list.items.map(invoiceBriefLine).join("\n") }] };
+        return minifiedResult(untrustedEnvelope(invoiceBriefLines(list), { note: UNTRUSTED_BRIEF_NOTE }));
       }
       return minifiedResult(list);
     },
