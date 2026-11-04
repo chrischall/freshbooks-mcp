@@ -4,6 +4,7 @@ import { McpToolError, minifiedResult } from "@chrischall/mcp-utils";
 import type { FreshbooksClient } from "../client.js";
 import { BUSINESS_RESOURCES } from "../resources.js";
 import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm.js";
+import { moneyMeta } from "./_hints.js";
 
 /**
  * Projects, time tracking and services.
@@ -29,6 +30,7 @@ export function registerProjectTools(
       description:
         "List projects for the business. Uses businessId (not accountId) and works even when " +
         "the business has no accounting account.",
+      _meta: moneyMeta("lookup"),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },
@@ -47,6 +49,7 @@ export function registerProjectTools(
     "freshbooks_get_project",
     {
       description: "Get a single project by its numeric id.",
+      _meta: moneyMeta("lookup"),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Project id"),
@@ -73,6 +76,7 @@ export function registerProjectTools(
     {
       description:
         "Create a project. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change"),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         title: z.string().describe("Project title"),
@@ -142,6 +146,7 @@ export function registerProjectTools(
       description:
         "List tracked time entries for the business. The response envelope also carries " +
         "total_logged and total_unbilled alongside the rows.",
+      _meta: moneyMeta("lookup", { aliases: ["hours", "timesheet", "time tracked"] }),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },
@@ -164,6 +169,7 @@ export function registerProjectTools(
     {
       description:
         "Log a time entry. Duration is in SECONDS. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change", { aliases: ["log hours", "track time"] }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         duration: z
@@ -213,6 +219,7 @@ export function registerProjectTools(
     {
       description:
         "List services (the billable work types available to projects and time entries).",
+      _meta: moneyMeta("lookup"),
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: page,
     },

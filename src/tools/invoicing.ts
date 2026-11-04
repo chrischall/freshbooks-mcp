@@ -6,6 +6,8 @@ import { CONFIRM_DESCRIPTION, confirmTokenParam, confirmWrite } from "./_confirm
 import { lineSchema } from "./_lines.js";
 import { assertNonEmptyUpdate } from "./_payload.js";
 import { assertClientRecipients, schemaAllowNonClientRecipients } from "./_recipients.js";
+import { moneyMeta } from "./_hints.js";
+import { invoiceBriefLine } from "./_brief.js";
 
 import { ACCOUNTING_RESOURCES } from "../resources.js";
 
@@ -39,36 +41,86 @@ const pageArgs = z.object({
     ),
 });
 
+const invoiceListArgs = pageArgs.extend({
+  view: z
+    .enum(["full", "brief"])
+    .optional()
+    .describe(
+      '"full" (default) returns FreshBooks\' invoices plus page/pages/total; "brief" returns one line ' +
+        "per invoice: Invoice <number>, <client>, <amount> — <due date or \"no date\"> — <status>.",
+    ),
+});
+
+/** The words a person says for the other lists. */
+const LIST_ALIASES: Record<string, string[]> = {
+  clients: ["clients", "customers"],
+  estimates: ["estimates", "quotes"],
+  payments: ["payments", "paid", "money in"],
+};
+
 export function registerInvoicingTools(
   server: McpServer,
   client: FreshbooksClient,
 ): void {
   // ---- Reads -------------------------------------------------------------
+  // The invoice list is this server's one canonical read (whats-due: "what's
+  // owed / overdue?"), so it alone gains the brief view the host speaks from.
+  server.registerTool(
+    "freshbooks_list_invoices",
+    {
+      description:
+        "List invoices for the authenticated FreshBooks account — what clients owe, with each " +
+        "invoice's due date and status. Supports pagination and raw FreshBooks filter params. " +
+        'Returns items plus page/pages/total; view "brief" returns one line per invoice instead.',
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: moneyMeta("whats-due", {
+        canonical: true,
+        aliases: ["invoices", "unpaid", "overdue", "outstanding", "owed", "billing"],
+      }),
+      inputSchema: invoiceListArgs,
+    },
+    async ({ page, per_page, search, view }) => {
+      const list = await client.accountingList(RESOURCES.invoices.path, RESOURCES.invoices.list, {
+        page,
+        perPage: per_page,
+        filters: search,
+      });
+      if (view === "brief") {
+        return { content: [{ type: "text" as const, text: list.items.map(invoiceBriefLine).join("\n") }] };
+      }
+      return minifiedResult(list);
+    },
+  );
+
   for (const [name, res] of Object.entries(RESOURCES)) {
-    server.registerTool(
-      `freshbooks_list_${name}`,
-      {
-        description:
-          `List ${name} for the authenticated FreshBooks account. Supports pagination and raw ` +
-          `FreshBooks filter params. Returns items plus page/pages/total.`,
-        annotations: { readOnlyHint: true, openWorldHint: true },
-        inputSchema: pageArgs,
-      },
-      async ({ page, per_page, search }) =>
-        minifiedResult(
-          await client.accountingList(res.path, res.list, {
-            page,
-            perPage: per_page,
-            filters: search,
-          }),
-        ),
-    );
+    if (name !== "invoices") {
+      server.registerTool(
+        `freshbooks_list_${name}`,
+        {
+          description:
+            `List ${name} for the authenticated FreshBooks account. Supports pagination and raw ` +
+            `FreshBooks filter params. Returns items plus page/pages/total.`,
+          annotations: { readOnlyHint: true, openWorldHint: true },
+          _meta: moneyMeta("lookup", LIST_ALIASES[name] ? { aliases: LIST_ALIASES[name] } : {}),
+          inputSchema: pageArgs,
+        },
+        async ({ page, per_page, search }) =>
+          minifiedResult(
+            await client.accountingList(res.path, res.list, {
+              page,
+              perPage: per_page,
+              filters: search,
+            }),
+          ),
+      );
+    }
 
     server.registerTool(
       `freshbooks_get_${name.replace(/s$/, "")}`,
       {
         description: `Get a single ${name.replace(/s$/, "")} by its numeric FreshBooks id.`,
         annotations: { readOnlyHint: true, openWorldHint: true },
+        _meta: moneyMeta("lookup"),
         inputSchema: z.object({
           id: z
             .number()
@@ -91,6 +143,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create a client (customer) in FreshBooks. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change"),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         email: z.string().optional().describe("Client's email address"),
@@ -142,6 +195,7 @@ export function registerInvoicingTools(
     {
       description:
         "Create an invoice for a client. Created invoices start as drafts. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change"),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         customerid: z
@@ -209,6 +263,7 @@ export function registerInvoicingTools(
         "an invoice out of draft can email it to the client. email_recipients in fields must be " +
         "addresses on the invoice's client record unless allow_non_client_recipients is set, which " +
         "is only for addresses the user named themselves.",
+      _meta: moneyMeta("change"),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -272,6 +327,7 @@ export function registerInvoicingTools(
     {
       description:
         "Record a payment against an invoice. " + CONFIRM_DESCRIPTION,
+      _meta: moneyMeta("change"),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         invoiceid: z

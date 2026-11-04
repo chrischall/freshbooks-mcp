@@ -99,6 +99,21 @@ update rather than HTTP `DELETE`. Confirm per resource before assuming.
 
 **A 200 is not proof a write persisted — re-read the record to confirm.**
 
+## In context groups
+
+When the freshbooks-mcp server is a member of an mcp-host registration, its tools carry
+`_meta.mint` hints that place it in the **money** group. The one canonical read is
+`freshbooks_list_invoices` for **what's due** ("what's owed?", "anything overdue?"): it
+takes `view: "brief"` and answers one line per invoice,
+`Invoice <number>, <client>, <amount> — <due date | no date> — <status>`. It names no
+subject — the account is fixed by the credential and clients are counterparties, not the
+person's subjects — and no date range, since the list filters on raw FreshBooks params.
+Everything else is a `lookup` read or a `change`/`send` write. A compound ask looks like
+"what's due this week — and are any invoices overdue?", where the money group adds the
+invoice lines to the other groups' answers. FreshBooks needs no browser, so it never
+answers "needs your browser open"; a spent refresh token surfaces as a source that could
+not answer until the authorize flow is re-run.
+
 ## Troubleshooting
 
 | Symptom | Cause |

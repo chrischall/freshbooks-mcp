@@ -12,6 +12,7 @@ import {
   assertClientRecipients,
   schemaAllowNonClientRecipients,
 } from "./_recipients.js";
+import { moneyMeta } from "./_hints.js";
 
 /**
  * Estimate writes.
@@ -59,6 +60,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Idempotent: an estimate already accepted or invoiced is returned unchanged " +
         "with changed: false and no write is sent. Returns the re-fetched estimate.",
+      _meta: moneyMeta("change", { aliases: ["accept quote", "approve estimate"] }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
         id: z
@@ -134,6 +136,7 @@ export function registerEstimateTools(
       // means "an executable write, behind a gate", so offering it here would invite a
       // retry through the confirmation flow in the belief that decline exists and is
       // merely gated.
+      _meta: moneyMeta("other"),
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
@@ -170,6 +173,7 @@ export function registerEstimateTools(
         CONFIRM_DESCRIPTION +
         " Supplying lines REPLACES the whole line set — include each existing " +
         "line's lineid to keep it. Returns the re-fetched estimate.",
+      _meta: moneyMeta("change"),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         id: z.number().int().positive().describe("Estimate id"),
@@ -282,6 +286,7 @@ export function registerEstimateTools(
         "the client's own address. email_recipients must be addresses on the estimate's client " +
         "record unless allow_non_client_recipients is set, which is only for addresses the user " +
         "named themselves. Returns the re-fetched estimate.",
+      _meta: moneyMeta("send", { aliases: ["send quote", "email estimate"] }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,

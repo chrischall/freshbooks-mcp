@@ -10,6 +10,7 @@ import {
   readBootstrapConfig,
   verifyAuthorizationResponse,
 } from "../auth.js";
+import { moneyMeta } from "./_hints.js";
 
 /**
  * The two tools that mint a refresh token, so nobody has to run a bootstrap
@@ -33,6 +34,7 @@ export function registerAuthTools(server: McpServer): void {
       description:
         "Get the FreshBooks consent URL to authorize this connection. Open it, approve, and you'll land on the redirect URL — pass that whole URL to freshbooks_auth_exchange (its state parameter binds the approval to this server; valid 15 minutes, single-use). Read-only; contacts nothing.",
       inputSchema: z.object({}),
+      _meta: moneyMeta("other"),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
@@ -60,6 +62,7 @@ export function registerAuthTools(server: McpServer): void {
             "The entire redirect URL you were sent to after approving, including its state parameter. A bare ?code= value is refused.",
           ),
       }),
+      _meta: moneyMeta("other"),
       // Destructive: it spends a single-use authorization code and replaces the saved
       // credentials, and nothing in this tool set restores either.
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
