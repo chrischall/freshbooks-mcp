@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.2...v1.3.0) (2026-11-04)
+
+
+### Features
+
+* context-group hints, a brief view on the invoice list ([#138](https://github.com/chrischall/freshbooks-mcp/issues/138)) ([24097e8](https://github.com/chrischall/freshbooks-mcp/commit/24097e89d2dd657123d7eb268e5dc0a8556cb9bf))
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.3.1 to 3.4.0 in the production-dependencies group ([#137](https://github.com/chrischall/freshbooks-mcp/issues/137)) ([4866e0c](https://github.com/chrischall/freshbooks-mcp/commit/4866e0c37283fbc5411f8cd777e7361824f6493e))
+* **deps:** bump the production-dependencies group with 2 updates ([#133](https://github.com/chrischall/freshbooks-mcp/issues/133)) ([4a59878](https://github.com/chrischall/freshbooks-mcp/commit/4a598787fac89a561a497c58c5775fbab53bb63a))
+* **deps:** bump the production-dependencies group with 2 updates ([#135](https://github.com/chrischall/freshbooks-mcp/issues/135)) ([947b45d](https://github.com/chrischall/freshbooks-mcp/commit/947b45d39976ebfe545ff5b1d0063c483b98bc53))
+
+
+### Documentation
+
+* **mint:** add sample prompts for the public catalog ([#130](https://github.com/chrischall/freshbooks-mcp/issues/130)) ([7f7d170](https://github.com/chrischall/freshbooks-mcp/commit/7f7d170ed0a26cfbd9fbbaa7e8ae9838f1b571f8))
+
 ## [1.2.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.2.1...v1.2.2) (2026-10-16)
 
 
