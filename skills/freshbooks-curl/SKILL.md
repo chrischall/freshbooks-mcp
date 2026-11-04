@@ -105,7 +105,10 @@ When the freshbooks-mcp server is a member of an mcp-host registration, its tool
 `_meta.mint` hints that place it in the **money** group. The one canonical read is
 `freshbooks_list_invoices` for **what's due** ("what's owed?", "anything overdue?"): it
 takes `view: "brief"` and answers one line per invoice,
-`Invoice <number>, <client>, <amount> — <due date | no date> — <status>`. It names no
+`Invoice <number>, <client>, <amount> — <due date | no date> — <status>`, cut to 120 characters
+as a whole. Client names are third-party text, so the lines arrive as `data` in the fleet's
+untrusted-data envelope, with `-- ` note lines for an empty page (`-- none`) or a partial one
+(`-- N of M shown`, `-- more`). It names no
 subject — the account is fixed by the credential and clients are counterparties, not the
 person's subjects — and no date range, since the list filters on raw FreshBooks params.
 Everything else is a `lookup` read or a `change`/`send` write. A compound ask looks like
