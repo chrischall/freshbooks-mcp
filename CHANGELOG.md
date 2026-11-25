@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/chrischall/freshbooks-mcp/compare/v1.3.1...v1.3.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.4.0 to 3.7.2 in the production-dependencies group ([#143](https://github.com/chrischall/freshbooks-mcp/issues/143)) ([be1147c](https://github.com/chrischall/freshbooks-mcp/commit/be1147c02f76126630923480ce86c712d1accc76))
+* **deps:** bump @chrischall/mcp-utils from 3.7.2 to 3.9.0 in the production-dependencies group ([#145](https://github.com/chrischall/freshbooks-mcp/issues/145)) ([431c1e4](https://github.com/chrischall/freshbooks-mcp/commit/431c1e4a7faa265ba7425e33776d3ca8a78a5164))
+
 ## [1.3.1](https://github.com/chrischall/freshbooks-mcp/compare/v1.3.0...v1.3.1) (2026-11-04)
 
 
